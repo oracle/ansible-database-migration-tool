@@ -1,0 +1,11 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Execute database backup configuration in OCI Control Plane (with DBCLI)
+#
+
+- import_tasks: configure_automatic_backup_with_DBCLI.yml
+  when: (register_in_OCI == 'True') and (convert_to_ExaCS == 'False') and (oracle_target_database_oci_bucketname == '')
+
+- import_tasks: configure_manual_backup_with_DBCLI.yml
+  when: (register_in_OCI == 'True') and (convert_to_ExaCS == 'False') and (oracle_target_database_oci_bucketname != '')

@@ -1,0 +1,5 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+oci_backupconfig: "{{ oci_backupconfig_prefix}}{{ oracle_target_database_unique_name }}"
+oracle_target_database_unique_name_upper: "{{ oracle_target_database_unique_name.split('_')[0] | upper }}_{{ oracle_target_database_unique_name.split('_')[1] }}"

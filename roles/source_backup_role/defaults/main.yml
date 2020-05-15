@@ -1,0 +1,164 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# General purpose variables, both for source and target.
+
+# Oracle database OS user (sqlplus, rman, srvctl).
+#
+oracle_user: "oracle"
+
+# Oracle Grid Infrastructure OS user (asmcmd, crsctl, srvctl).
+#
+grid_user: "grid"
+
+# This password will be used for RMAN encryption 
+# on transit (set encryption, set decription identified by ...).
+# if hashed RMAN will not enable encryption on transit.
+#
+rman_password_on_transit: "<rman_password>"
+
+# In this location on source and target nodes you can expect RMAN logs.
+#
+rman_log_path: "/tmp"
+
+# In this location on source and target nodes you can expect reports.
+#
+reports_log_path: "/tmp"
+
+# This password will be used for creating password based keystore
+# when the source database has no TDE enabled.
+#
+tde_password: "<tde_password>"
+
+# For RMAN and sqlplus tasks you will have asynchronous execution
+# By default the task will be monitored for 40 hours (144000 secs)
+# If not finished before it will fail.
+#
+ansible_async_backup_source_timeout: "144000"
+ansible_async_restore_source_timeout: "144000"
+
+# Number of channels allocated for RMAN backup, restore and recovery
+# activities for database.
+#
+rman_channels_number: "6"
+
+# During spfile and controlfile restore from autobackup you need to set
+# CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE SBT.
+#
+rman_set_cf_autobackup_format_for_sbt_type_device: "%F"
+
+# Customized db_recovery_file_dest_size on the target (default 1000G)
+#
+param_db_recovery_file_dest_size: "5000G"
+
+# Configure channel devide type sbt type
+#
+configure_channel_device_type_sbt_type: "True"
+
+# Customized param_diagnostic_dest on the target (default is not defined)
+#
+#param_diagnostic_dest: "/u01/app/oracle"
+
+# Customized param_log_archive_dest_1 on the target (default is not defined)
+#
+#param_log_archive_dest_1: "LOCATION=USE_DB_RECOVERY_FILE_DEST REOPEN=60"
+
+# Temp tablespace name
+#
+temp_tablespace_name: "TEMP"
+
+# Location where OPC installer for RMAN cloud module will be executed
+#
+opc_installer_dest_location: "/home/oracle"
+
+# Location where OPC installer zip file will be uploaded.
+#
+opc_installer_zip_dest_location: "{{ opc_installer_dest_location }}/opc_installer.zip"
+
+# OCI swiftobjectstorage URL build from OCI endpoint and OCI tenancy.
+#
+oci_swiftobjectstorage_url: "{{ oci_endpoint_url }}/{{ oci_tenancy }}"
+
+# RMAN cloud module wallet directory.
+#
+wallet_dir: "{{ opc_installer_dest_location }}"
+
+# RMAN cloud module lib directory.
+#
+lib_dir: "{{ opc_installer_dest_location }}"
+
+# RMAN cloud module config file.
+#
+config_file: "{{ opc_installer_dest_location }}/config_{{ oracle_source_database_sid }}"
+
+# Default OCI bucket prefix for target database
+#
+oci_bucket_prefix: "bkup_"
+
+# Default OCI backup config prefix for target database
+#
+oci_backupconfig_prefix: "bkupcfg_"
+
+# Delete previous backupconfigs
+#
+delete_old_backupconfigs: "True"
+
+# Delete previous objectstoreswift
+#
+delete_old_objectstoreswift: "True"
+
+# Create new backupconfig
+#
+create_new_backupconfig: "True"
+
+# Create new objectstoreswift
+#
+create_new_objectstoreswift: "True"
+
+# Update database with new backupconfig
+#
+update_database_with_new_backupconfig: "True"
+
+# Create Longterm backup with keep days = 30 days.
+#
+create_backup_longterm_30_days: "True"
+
+# Crosscheck before restore from backup level 0
+#
+crosscheck_before_restore_level0: "True"
+
+# Prefix for RAC UNDO tablespaces
+#
+rac_undo_tbs_prefix: "UNDOTBS_RACNODE"
+
+# Start size of RAC UNDO tablesapce
+#
+rac_undo_tbs_start_size: "500M"
+
+# Use of startup nomount force
+#
+startup_nomount_force: "False"
+
+# Tempfile not big by default
+#
+tempfile_bigfile: "NO"
+
+# Drop TDE during target clean up
+#
+drop_tde_during_target_clean_up: "True"
+
+# Skip download of TDE wallet and stay with current TDE wallet files
+#
+skip_tde_download_stay_with_current_tde: "False"
+
+# DataPatch on target
+#
+datapatch_on_target: "True"
+
+# You can disable unarchive Ansible module in case of error: "Failed to find handler for ...  
+# ... Make sure the required command to extract the file is installed. 
+# Command \"/bin/gtar\" could not handle archive. Command \"/bin/unzip\" could not handle archive."
+#
+use_unarchive_ansible_module: "True"
+
+

@@ -1,0 +1,28 @@
+{{ oracle_source_database_unique_name }} =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = {{ target_fqdn }})(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = {{ oracle_source_database_unique_name }}.{{ target_dns_domain }})
+      (FAILOVER_MODE =
+        (TYPE = select)
+        (METHOD = basic)
+      )
+    )
+  )
+{% for item in pdbs_list_without_pdbseed %}
+
+{{ item }} =
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = {{ target_fqdn }})(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = {{ item }}.{{ target_dns_domain }})
+      (FAILOVER_MODE =
+        (TYPE = select)
+        (METHOD = basic)
+      )
+    )
+  )
+
+{% endfor %}

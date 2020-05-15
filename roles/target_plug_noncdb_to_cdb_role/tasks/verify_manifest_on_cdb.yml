@@ -1,0 +1,77 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Verify plug compatibility for non-CDB to be plugged as PDB to CDB on target
+#  
+
+# Shutdown CDB database on target 
+- name: Shutdown CDB database on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "shutdown immediate;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput1  
+ 
+# Startup CDB database on target 
+- name: Startup CDB database on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "startup open;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput2  
+
+# Execute DBMS_PDB.CHECK_PLUG_COMPATIBILITY for manifest file
+- name: Execute DBMS_PDB.CHECK_PLUG_COMPATIBILITY for manifest file
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "{{ lookup('template', '../templates/CHECK_PLUG_COMPATIBILITY.j2') }}"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput3  
+
+# Verify PDB_PLUG_IN_VIOLATIONS for non-CDB to be plugged 
+- name: Verify PDB_PLUG_IN_VIOLATIONS for non-CDB to be plugged 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "SELECT name, cause, type, message, status FROM PDB_PLUG_IN_VIOLATIONS WHERE name=UPPER('{{ oracle_source_database_sid }}') and type='ERROR' and status='PENDING';"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput4
+
+# Set fact for pdb_plug_in_violations
+- name: Set fact for pdb_plug_in_violations
+  set_fact:
+    pdb_plug_in_violations: "{{ sqlplusoutput4.sqlplus_message[0] }}"
+
+# Show pdb_plug_in_violations
+- name: Show pdb_plug_in_violations
+  debug:
+    msg: "{{ pdb_plug_in_violations }}"
+  when: (pdb_plug_in_violations is defined)
+
+# Fail if pdb_plug_in_violations has errors
+- name: Fail if pdb_plug_in_violations has errors 
+  debug:
+    msg: "PDB PLUG IN VIOLATIONS table has errors. Please review before moving forward... {{ pdb_plug_in_violations }}"
+  when: (pdb_plug_in_violations is defined) and (pdb_plug_in_violations|length>0)
+  failed_when: (pdb_plug_in_violations is defined) and (pdb_plug_in_violations|length>0) 
+
+

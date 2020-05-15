@@ -1,0 +1,9 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+
+# Backup source (AWS DB on top of EC2 or OCI-C DBCS) 
+- name: Backup source (AWS DB on top of EC2 or OCI-C DBCS) 
+  hosts: source[0] 
+  roles:
+    - source_backup_role 

@@ -1,0 +1,11 @@
+[source]
+<source_AWS_EC2_SI_DB_IP>
+[source:vars]
+ansible_user=ec2-user
+ansible_ssh_private_key_file = </path/to/ssh/private_key>
+
+[target]
+<target_VMDB_or_BMDB_SI_IP>
+[target:vars]
+ansible_user=opc
+ansible_ssh_private_key_file = </path/to/ssh/private_key>

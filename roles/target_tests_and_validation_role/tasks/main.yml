@@ -1,0 +1,11 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Test and Validation after Setup Phase 
+#
+
+- import_tasks: test_and_validation_of_SI.yml 
+  when: convert_to_RAC == 'False'
+
+- import_tasks: test_and_validation_of_RAC.yml
+  when: convert_to_RAC == 'True' 

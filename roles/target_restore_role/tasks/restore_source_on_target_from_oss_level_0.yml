@@ -1,0 +1,671 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Restore on target source database from OSS (level 0)
+#  
+
+# Creating directory for audit trail for source database on the target
+- name: Creating directory for audit trail for source database on the target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}" 
+  file: path={{ oracle_target_adump_dir }} state=directory
+
+# Upload init{{ oracle_source_database_sid}}.ora (startup_nomount_force == False)
+- name: Upload init{{ oracle_source_database_sid}}.ora (startup_nomount_force == False)
+  become: yes
+  become_method: sudo
+  template:
+    src: "../templates/initora.j2"
+    dest: "/tmp/init{{ oracle_source_database_sid }}.ora"
+    owner: "{{ oracle_user }}"
+  when: (startup_nomount_force == 'False')
+
+# Starting RMAN restore source's SPFILE from OSS on the target
+- name: Starting RMAN restore source's SPFILE from OSS on the target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "{{ lookup('template', '../templates/rman_restore_spfile_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_restore_spfile_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30  
+  register: rmanoutput1
+
+# Obtain obsolete parameters from spfile
+- name: Obtain obsolete parameters from spfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "select name from v$obsolete_parameter where isspecified='TRUE';"
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput1
+
+# Set obsolete parameter from spfile as fact
+- name: Set obsolete parameter from spfile as fact
+  set_fact:
+    pfile_obsolete_parameters: "{{ sqlplusoutput1.sqlplus_message[0] }}"
+
+# Shutdown immediate for source database instance on the target
+- name: Shutdown immediate for source database instance on the target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: 'shutdown immediate;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput1
+ 
+# Creating temporal PFILE from the restored SPFILE of source database
+- name: Creating temporal PFILE from the restored SPFILE of source database
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: 'create pfile from spfile;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput1
+
+# Remove obsolete parameters from temporal PFILE
+- name: Remove obsolete parameters from temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]{{ item }}="
+    state: absent
+    owner: "{{ oracle_user }}"
+  loop: "{{ pfile_obsolete_parameters }}"  
+  when: (pfile_obsolete_parameters | length>0) 
+
+# Remove background_dump_dest from temporal PFILE
+- name: Remove background_dump_dest from temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]background_dump_dest="
+    state: absent
+    owner: "{{ oracle_user }}"
+
+# Remove user_dump_dest from temporal PFILE
+- name: Remove user_dump_dest from temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]user_dump_dest="
+    state: absent
+    owner: "{{ oracle_user }}"
+
+# Remove remote_os_authent from temporal PFILE
+- name: Remove remote_os_authent from temporal PFILE
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]remote_os_authent="
+    state: absent
+    owner: "{{ oracle_user }}"
+
+# Changing audit_file_dest parameter in temporal PFILE (avoiding ORA-09925 at startup nomount)
+- name: Changing audit_file_dest parameter in temporal PFILE (avoiding ORA-09925 at startup nomount)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]audit_file_dest="
+    line: "*.audit_file_dest='{{ oracle_target_adump_dir }}'"
+    owner: "{{ oracle_user }}"
+
+# Changing diagnostic_dest parameter in temporal PFILE
+- name: Changing diagnostic_dest parameter in temporal PFILE
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]diagnostic_dest="
+    line: "*.diagnostic_dest='{{ param_diagnostic_dest }}'"
+    owner: "{{ oracle_user }}"
+  when: param_diagnostic_dest is defined
+
+# Changing log_archive_dest_1 parameter in temporal PFILE
+- name: Changing log_archive_dest_1 parameter in temporal PFILE
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]log_archive_dest_1="
+    line: "*.log_archive_dest_1='{{ param_log_archive_dest_1 }}'"
+    owner: "{{ oracle_user }}"
+  when: param_log_archive_dest_1 is defined
+
+# Changing db_create_file_dest parameter to ASM location in temporal PFILE (avoiding ORA-01261 as OCI-C is not using ASM)
+- name: Changing db_create_file_dest parameter to ASM location in temporal PFILE (avoiding ORA-01261 as OCI-C is not using ASM)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]db_create_file_dest="
+    line: "*.db_create_file_dest='{{ grid_target_data_dg }}'"
+    owner: "{{ oracle_user }}"
+
+# Changing db_create_online_log_dest_1 parameter to ASM location in temporal PFILE (avoiding ORA-01261 as OCI-C is not using ASM)
+- name: Changing db_create_online_log_dest_1 parameter to ASM location in temporal PFILE (avoiding ORA-01261 as OCI-C is not using ASM)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]db_create_online_log_dest_1="
+    line: "*.db_create_online_log_dest_1='{{ grid_target_reco_dg }}'"
+    owner: "{{ oracle_user }}"
+
+# Changing db_recovery_file_dest parameter to ASM location in temporal PFILE (avoiding ORA-01261 as OCI-C is not using ASM)
+- name: Changing db_recovery_file_dest parameter to ASM location in temporal PFILE (avoiding ORA-01261 as OCI-C is not using ASM)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]db_recovery_file_dest="
+    line: "*.db_recovery_file_dest='{{ grid_target_reco_dg }}'"
+    owner: "{{ oracle_user }}"  
+
+# Changing db_recovery_file_dest_size parameter in temporal PFILE (avoiding ORA-19802 - cannot use DB_RECOVERY_FILE_DEST without DB_RECOVERY_FILE_DEST_SIZE)
+- name: Changing db_recovery_file_dest_size parameter in temporal PFILE (avoiding ORA-19802 - cannot use DB_RECOVERY_FILE_DEST without DB_RECOVERY_FILE_DEST_SIZE)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]db_recovery_file_dest_size="
+    line: "*.db_recovery_file_dest_size='{{ param_db_recovery_file_dest_size }}'"
+    owner: "{{ oracle_user }}"  
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Removing db_file_name_convert in temporal PFILE
+- name: Removing db_file_name_convert in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]db_file_name_convert="
+    state: absent
+    owner: "{{ oracle_user }}"  
+
+# Removing log_file_name_convert in temporal PFILE
+- name: Removing log_file_name_convert in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]log_file_name_convert="
+    state: absent
+    owner: "{{ oracle_user }}"  
+
+# Removing remote_listener in temporal PFILE
+- name: Removing remote_listener in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]remote_listener="
+    state: absent
+    owner: "{{ oracle_user }}"  
+
+# Removing local_listener in temporal PFILE
+- name: Removing local_listener in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]local_listener="
+    state: absent
+    owner: "{{ oracle_user }}" 
+
+# Removing local_listener for instance1 in temporal PFILE
+- name: Removing local_listener for instance1 in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}1[.]local_listener="
+    state: absent
+    owner: "{{ oracle_user }}"  
+  
+# Removing local_listener for instance2 in temporal PFILE
+- name: Removing local_listener for instance2 in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}2[.]local_listener="
+    state: absent
+    owner: "{{ oracle_user }}"  
+
+# Removing instance_number 1 in temporal PFILE
+- name: Removing instance_number 1 in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}1[.]instance_number="
+    state: absent
+    owner: "{{ oracle_user }}"  
+
+# Removing instance_number 2 in temporal PFILE
+- name: Removing instance_number 2 in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}2[.]instance_number="
+    state: absent
+    owner: "{{ oracle_user }}"       
+
+# Remove cluster_interconnects for first node from temporal PFILE
+- name: Remove cluster_interconnects for first node from temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}1[.]cluster_interconnects="
+    state: absent
+    owner: "{{ oracle_user }}"    
+
+# Remove cluster_interconnects for second node from temporal PFILE
+- name: Remove cluster_interconnects for second node from temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}2[.]cluster_interconnects="
+    state: absent
+    owner: "{{ oracle_user }}"   
+
+# Removing thread 1 in temporal PFILE
+- name: Removing thread 1 in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}1[.]thread="
+    state: absent
+    owner: "{{ oracle_user }}"  
+
+# Removing thread 2 in temporal PFILE
+- name: Removing thread 2 in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}2[.]thread="
+    state: absent
+    owner: "{{ oracle_user }}" 
+
+# Removing undo_tablespace 1 in temporal PFILE
+- name: Removing undo_tablespace 1 in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}1[.]undo_tablespace="
+    state: absent
+    owner: "{{ oracle_user }}"  
+
+# Removing undo_tablespace 2 in temporal PFILE
+- name: Removing undo_tablespace 2 in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^{{ oracle_source_database_sid }}2[.]undo_tablespace="
+    state: absent
+    owner: "{{ oracle_user }}"      
+
+# Removing cluster_database in temporal PFILE
+- name: Removing cluster_database in temporal PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]cluster_database="
+    state: absent
+    owner: "{{ oracle_user }}" 
+
+# Get target DNS domain (for temporal PFILE)
+- name: Get target DNS domain (for temporal PFILE)
+  become: yes
+  become_method: sudo
+  command: "dnsdomainname"
+  register: dns_domian_output
+
+# Set target_dns_domain fact (for temporal PFILE)
+- name: Set target_dns_domain fact (for temporal PFILE)
+  set_fact:
+    target_dns_domain: "{{ dns_domian_output.stdout }}"
+
+# Change db_domain to the target_dns_domain fact in temporal PFILE
+- name: Change db_domain to the target_dns_domain fact in temporal PFILE
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]db_domain="
+    line: "*.db_domain='{{ target_dns_domain }}'"
+    owner: "{{ oracle_user }}"
+
+# Change db_unique_name in temporal PFILE
+- name: Change db_unique_name in temporal PFILE
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]db_unique_name="
+    line: "*.db_unique_name='{{ oracle_target_database_unique_name }}'"
+    owner: "{{ oracle_user }}"
+
+# Removing restored SPFILE file 
+- name: Removing restored SPFILE file
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/spfile{{ oracle_source_database_sid }}.ora"   
+
+# Creating directory in ASM for SPFILE
+- name: Creating directory in ASM for SPFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ grid_user }}"
+  oracle_asmcmd_module:
+    oracle_home: "{{ grid_target_ohome_dir }}"
+    oracle_sid: "{{ grid_oracle_database_sid }}"
+#    asmcmd_script: 'mkdir {{ grid_target_data_dg }}/{{ oracle_source_database_sid }}'
+    asmcmd_script: 'mkdir {{ grid_target_data_dg }}/{{ oracle_target_database_unique_name }}' 
+    ignore_ORA_errors: True
+
+# Creating ASM directory for the final SPFILE
+- name: Creating ASM directory for the final SPFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+#    sql_statement: "create spfile='{{ grid_target_data_dg }}/{{ oracle_source_database_sid }}/spfile{{ oracle_source_database_sid }}.ora' from pfile;"
+    sql_statement: "create spfile='{{ grid_target_data_dg }}/{{ oracle_target_database_unique_name }}/spfile{{ oracle_source_database_sid }}.ora' from pfile;"
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput1
+
+# Removing temporal PFILE 
+- name: Removing temporal PFILE 
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"   
+
+# Creating the final PFILE (with the link to ASM location)
+- name: Creating the final PFILE (with the link to ASM location)
+  become: yes
+  become_method: sudo  
+  copy:
+#    content: "SPFILE='{{ grid_target_data_dg }}/{{ oracle_source_database_sid }}/spfile{{ oracle_source_database_sid }}.ora'"
+    content: "SPFILE='{{ grid_target_data_dg }}/{{ oracle_target_database_unique_name }}/spfile{{ oracle_source_database_sid }}.ora'"
+    dest: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"  
+
+# Changing ownership of the SPFILE to oracle_user
+- name: Changing ownership of the SPFILE to oracle_user
+  become: yes
+  become_method: sudo
+  file:
+    owner: "{{ oracle_user }}"
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora" 
+
+# Startup nomount instance for the source instance on target 
+- name: Startup nomount instance for the source instance on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: 'startup nomount'
+    output_as_array: True    
+  register: sqlplusoutput2   
+
+# Setting spfile's db_create_file_dest parameter for both instances
+- name: Setting spfile's db_create_file_dest parameter for both instances
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "alter system set db_create_file_dest='{{ grid_target_data_dg }}' sid='*' scope=spfile;"
+    output_as_array: True    
+  register: sqlplusoutput3
+
+# Setting spfile's db_recovery_file_dest parameter for both instances 
+- name: Setting spfile's db_recovery_file_dest parameter for both instances
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "alter system set db_recovery_file_dest='{{ grid_target_reco_dg }}' sid='*' scope=spfile;"
+    output_as_array: True    
+  register: sqlplusoutput4
+
+# Setting spfile's db_recovery_file_dest_size parameter for both instances
+- name: Setting spfile's db_recovery_file_dest_size parameter for both instances
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "alter system set db_recovery_file_dest_size={{ param_db_recovery_file_dest_size }} sid='*' scope=spfile;"
+    output_as_array: True    
+  register: sqlplusoutput5
+
+# Setting spfile's control_files parameter for both instances
+- name: Setting spfile's control_files parameter for both instances
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "alter system set control_files='{{ grid_target_reco_dg }}' sid='*' scope=spfile;"
+    output_as_array: True    
+  register: sqlplusoutput6
+
+# Setting spfile db_create_online_log_dest_1 parameter for both instances
+- name: Setting spfile db_create_online_log_dest_1 parameter for both instances
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "alter system set db_create_online_log_dest_1='{{ grid_target_reco_dg }}' sid='*' scope=spfile;"
+    output_as_array: True    
+  register: sqlplusoutput7  
+
+# Shutdown immediate instance again
+- name: Shutdown immediate instance again
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: 'shutdown immediate;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput8
+
+# Startup nomount instance again
+- name: Startup nomount instance again
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: 'startup nomount;'
+    output_as_array: True    
+  register: sqlplusoutput9 
+
+# Starting RMAN restore CONTROLFILE from OSS to the target
+- name: Starting RMAN restore CONTROLFILE from OSS to the target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"  
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "{{ lookup('template', '../templates/rman_restore_controlfile_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_restore_controlfile_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30  
+  register: rmanoutput4
+
+# Changing instance state to MOUNT after successful CONTROLFILE restore
+- name: Changing instance state to MOUNT after successful CONTROLFILE restore
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: 'alter database mount;'
+    output_as_array: True    
+  register: sqlplusoutput10
+
+# Setting inital empty RMAN channels fact table
+- name: Setting inital empty RMAN channels fact table
+  set_fact:
+    rman_channels: [] 
+
+# Generating RMAN channels fact table   
+- name: Generating RMAN channels fact table   
+  set_fact:
+    rman_channels: "{{ rman_channels }} + ['c{{ item }}']" 
+  with_sequence: start=1 end={{ rman_channels_number }}  
+
+# Starting RMAN to restore DATABASE from OSS from backup level 0 to the target
+- name: Starting RMAN to restore DATABASE from OSS from backup level 0 to the target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "{{ lookup('template', '../templates/rman_restore_database_from_backup_inc0_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_restore_database_from_backup_level_0_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30
+  register: rmanoutput5
+
+# Starting RMAN to list databasecopy all on the target
+- name: Starting RMAN to list databasecopy all on the target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "list datafilecopy all;"
+    rman_logfile: "{{ rman_log_path }}/rman_list_datafilecopy_all_after_backup_level_0_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30
+  register: rmanoutput7  
+
+# Starting RMAN to switch datafiles to the copy restored from OSS from backup level 0 to the target
+- name: Starting RMAN to switch datafiles to the copy restored from OSS from backup level 0 to the target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "switch database to copy;"
+    rman_logfile: "{{ rman_log_path }}/rman_switch_database_to_copy_after_backup_level_0_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30
+  register: rmanoutput7
+
+ 
+
+       
+  
+  

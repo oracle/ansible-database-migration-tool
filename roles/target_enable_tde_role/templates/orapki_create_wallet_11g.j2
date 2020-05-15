@@ -1,0 +1,3 @@
+{{ oracle_target_ohome_dir }}/bin/orapki wallet create -wallet "{{ oracle_target_wallet_dir }}/{{ oracle_target_database_unique_name }}" -auto_login <<EOF
+{{ tde_password }}
+EOF

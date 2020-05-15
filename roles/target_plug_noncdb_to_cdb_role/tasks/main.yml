@@ -1,0 +1,18 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Execute convert from non-CDB to CDB on the target
+#
+
+- import_tasks: prepare_noncdb.yml
+
+- import_tasks: verify_manifest_on_cdb.yml
+
+- import_tasks: plug_noncdb_into_cbd.yml
+
+- import_tasks: export_tde_from_noncdb.yml
+  when: (export_import_tde_wallet == 'True')
+
+- import_tasks: import_tde_into_cdb.yml
+  when: (export_import_tde_wallet == 'True')
+

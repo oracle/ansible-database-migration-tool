@@ -1,0 +1,79 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Prepare non-CDB to copied as PDB to CDB.
+#  
+
+# Shutdown non-CDB database on target 
+- name: Shutdown non-CDB database on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "shutdown immediate;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput1  
+ 
+# Startup mount exclusive for non-CDB database on target 
+- name: Startup mount exclusive for non-CDB database on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "startup mount exclusive;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput2 
+
+# Open read only non-CDB database on target 
+- name: Open read only non-CDB database on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "alter database open read only;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput3
+
+# Remove old manifest file on target 
+- name: Remove old manifest file on target 
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "/tmp/{{ oracle_source_database_sid }}_manifest_file.xml"
+
+# Generate manifest file for non-CDB database on target 
+- name: Generate manifest file for non-CDB database on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "exec dbms_pdb.describe (pdb_descr_file=>'/tmp/{{ oracle_source_database_sid }}_manifest_file.xml');"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput4
+
+# Shutdown non-CDB database on target 
+- name: Shutdown non-CDB database on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "shutdown immediate;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput5

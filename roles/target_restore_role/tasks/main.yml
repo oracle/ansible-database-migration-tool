@@ -1,0 +1,25 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Execute the restore on the target
+#
+
+- import_tasks: clear_source_on_target.yml
+  when: (clear_source_on_target == 'True')
+
+- import_tasks: prepare_target_rman_oss.yml
+  when: (prepare_rman_on_target == 'True')
+
+- import_tasks: tde_wallet_download_from_oss.yml
+  when: (tde_download_from_oss == 'True')
+
+- import_tasks: restore_source_on_target_from_oss_level_0.yml 
+  when: (restore_level0 == 'True')
+
+- import_tasks: restore_source_on_target_from_oss_level_1.yml 
+  when: (restore_level1 == 'True')
+
+- import_tasks: open_resetlogs_and_post_migration_clean.yml 
+  when: (open_resetlogs == 'True')
+
+

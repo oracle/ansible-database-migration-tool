@@ -1,0 +1,131 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Configure automatic backup with DBCLI (will utilize object store created automatically)
+# 
+
+# Show oracle_target_database_unique_name_upper
+- name: Show oracle_target_database_unique_name_upper
+  debug:
+    msg: "Looking for database = {{ oracle_target_database_unique_name_upper }}"
+
+# Crosscheck archivelog all to eliminate archivelogs in non-ASM location enherited from the source (RAC)
+- name: Crosscheck archivelog all to eliminate archivelogs in non-ASM location enherited from the source (RAC)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "crosscheck archivelog all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True   
+  register: rmanoutput1
+  when: (convert_to_RAC == 'True')
+
+# Delete expired archivelog all to eliminate archivelogs in non-ASM location enherited from the source (RAC)
+- name: Delete expired archivelog all to eliminate archivelogs in non-ASM location enherited from the source (RAC)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "delete noprompt expired archivelog all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True   
+  register: rmanoutput1
+  when: (convert_to_RAC == 'True')
+
+# Crosscheck archivelog all to eliminate archivelogs in non-ASM location enherited from the source (SI)
+- name: Crosscheck archivelog all to eliminate archivelogs in non-ASM location enherited from the source (SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "crosscheck archivelog all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True   
+  register: rmanoutput1
+  when: (convert_to_RAC == 'False')
+
+# Delete expired archivelog all to eliminate archivelogs in non-ASM location enherited from the source (SI)
+- name: Delete expired archivelog all to eliminate archivelogs in non-ASM location enherited from the source (SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "delete noprompt expired archivelog all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True   
+  register: rmanoutput1
+  when: (convert_to_RAC == 'False')
+
+################################################################################################
+# Update database with current backupconfig (when oracle_target_database_oci_bucketname not set)
+################################################################################################
+
+# Execute dbcli list-databases to check
+- name: Execute dbcli list-databases to check
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'list-databases'
+  register: dbcli_registered_output4  
+
+# Set databases_list fact 
+- name: Set databases_list fact  
+  set_fact:
+    databases_list: "{{ dbcli_registered_output4.dbcli_output }}"
+  
+# Set upper_database_id and upper_backupconfig_id fact 
+- name: Set upper_database_id and upper_backupconfig_id fact 
+  set_fact:
+    upper_database_id: "{{ item.id }}"
+    upper_backupconfig_id: "{{ item.backupConfigId }}"
+  loop: "{{ databases_list }}"
+  when: 
+    - item.databaseUniqueName == '{{ oracle_target_database_unique_name_upper }}' 
+  
+# Set database_id and backupconfig_id fact 
+- name: Set database_id and backupconfig_id fact 
+  set_fact:
+    database_id: "{{ item.id }}"
+    backupconfig_id: "{{ item.backupConfigId }}"
+  loop: "{{ databases_list }}"
+  when: 
+    - item.databaseUniqueName == '{{ oracle_target_database_unique_name }}' 
+
+# Execute dbcli update-database (oracle_target_database_unique_name_upper)
+- name: Execute dbcli update-database (oracle_target_database_unique_name_upper)
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'update-database'
+    db_id: '{{ upper_database_id }}'
+    register_database_backupconfigid: '{{ upper_backupconfig_id }}'
+    as_json: False
+  register: dbcli_registered_output7 
+  when: (upper_database_id is defined) and (upper_backupconfig_id is defined) and (update_database_with_new_backupconfig == 'True')
+  
+# Execute dbcli update-database (oracle_target_database_unique_name)
+- name: Execute dbcli update-database (oracle_target_database_unique_name)
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'update-database'
+    db_id: '{{ database_id }}'
+    register_database_backupconfigid: '{{ backupconfig_id }}'
+    as_json: False
+  register: dbcli_registered_output7 
+  when: (database_id is defined) and (backupconfig_id is defined) and (update_database_with_new_backupconfig == 'True')
+  
+

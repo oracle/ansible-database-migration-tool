@@ -1,0 +1,8 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Convert SI to RACNODE1
+#
+
+- import_tasks: convert_source_to_racnode1_on_target.yml
+  when: convert_to_RAC

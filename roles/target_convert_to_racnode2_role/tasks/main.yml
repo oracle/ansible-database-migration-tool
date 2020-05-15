@@ -1,0 +1,13 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Convert SI to RACNODE2
+#
+
+- import_tasks: tde_wallet_download_from_oss.yml
+  when: tde_download_from_oss
+  
+- import_tasks: convert_source_to_racnode2_on_target.yml
+  when: convert_to_RAC
+
+

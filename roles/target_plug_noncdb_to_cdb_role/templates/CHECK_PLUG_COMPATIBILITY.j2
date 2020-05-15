@@ -1,0 +1,10 @@
+SET SERVEROUTPUT ON;
+ DECLARE
+ Compatible CONSTANT VARCHAR2(3) :=CASE  DBMS_PDB.CHECK_PLUG_COMPATIBILITY(pdb_descr_file => '/tmp/{{ oracle_source_database_sid }}_manifest_file.xml')
+ WHEN TRUE THEN 'YES'
+ ELSE 'NO'
+ END;
+ BEGIN
+    DBMS_OUTPUT.PUT_LINE(compatible);
+ END;
+ /

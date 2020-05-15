@@ -1,0 +1,269 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Convert SI to RACNODE2
+#
+
+# Make directory for audit trail on target racnode2
+- name: Make directory for audit trail on target racnode2
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}" 
+  file: path={{ oracle_target_racnode2_adump_dir }} state=directory
+
+# Create PFILE for racnode2
+- name: Create PFILE for racnode2
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  copy:
+    content: "SPFILE='{{ grid_target_data_dg }}/{{ oracle_target_database_unique_name }}/spfile{{ oracle_source_database_sid }}.ora'"
+    dest: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}2.ora"
+
+# Adding source instance2 on the target to CRS registry (SRVCTL 12c+)
+- name: Adding source instance2 on the target to CRS registry (SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}2"
+    oracle_node: "{{ ansible_hostname }}"
+    srvctl_command: "add instance"
+  register: srvctloutput3  
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Adding source instance2 on the target to CRS registry (SRVCTL 11g)
+- name: Adding source instance2 on the target to CRS registry (SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}2"
+    oracle_unqname: "{{ oracle_source_database_sid }}"
+    oracle_node: "{{ ansible_hostname }}"
+    srvctl_command: "add instance"
+    syntax_11g: True
+  register: srvctloutput3  
+  when: oracle_source_version == '11.2.0.4'
+
+# Start source instance2 on target racnode2 (SQLPLUS)
+- name: Start source instance2 on target racnode2 (SQLPLUS) 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}2"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: 'startup open;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput10 
+
+# Starting source instance2 on the target racnode2 (SRVCTL 12c+)
+- name: Starting source instance2 on the target racnode2 (SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}2"
+    srvctl_command: "start instance"
+  register: srvctloutput3 
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Starting source instance2 on the target racnode2 (SRVCTL 11g)
+- name: Starting source instance2 on the target racnode2 (SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}2"
+    oracle_unqname: "{{ oracle_source_database_sid }}"
+    srvctl_command: "start instance"
+    syntax_11g: True
+  register: srvctloutput3 
+  when: oracle_source_version == '11.2.0.4'
+
+# Showing TDE wallet status on the racnode2 (SQLPLUS 12c+)
+- name: Showing TDE wallet status on the racnode2 (SQLPLUS 12c+) 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}2"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: 'select wrl_parameter, status, wallet_type from v$encryption_wallet;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput11  
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Showing TDE wallet status on the racnode2 (SQLPLUS 11g)
+- name: Showing TDE wallet status on the racnode2 (SQLPLUS 11g) 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}2"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: 'select * from v$encryption_wallet;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput11  
+  when: oracle_source_version == '11.2.0.4'
+  
+# Show status of source database on the target again (take from to CRS registry with SRVCTL 12c+)
+- name: Show status of source database on the target again (take from to CRS registry with SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "status database"
+  register: srvctloutput6  
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Show status of source database on the target again (take from to CRS registry with SRVCTL 11g)
+- name: Show status of source database on the target again (take from to CRS registry with SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "status database"
+    oracle_unqname: "{{ oracle_source_database_sid }}"
+    syntax_11g: True
+  register: srvctloutput6  
+  when: oracle_source_version == '11.2.0.4'
+
+# Add entry to /etc/oratab for instance2 on racnode2
+- name: Add entry to /etc/oratab for instance2 on racnode2
+  become: yes
+  become_method: sudo  
+  lineinfile:
+    path: "/etc/oratab"
+    regexp: "^{{ oracle_source_database_sid }}2[:]"
+    line: "{{ oracle_source_database_sid }}2:{{ oracle_target_ohome_dir }}:N"
+    owner: "{{ oracle_user }}"  
+
+# Checking if database is CDB or non-CDB (12c+)
+- name: Checking if database is CDB or non-CDB (12c+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}2"
+    sql_statement: "SELECT CDB FROM V$DATABASE;"
+    output_as_array: True
+  register: sqlplusoutput3
+  when: oracle_source_version != '11.2.0.4'
+
+# Set fact for cdb_database (12c+)
+- name: Set fact for cdb_database (12c+)
+  set_fact:
+    cdb_database: "{{ sqlplusoutput3.sqlplus_message[0][0] }}"
+  when: oracle_source_version != '11.2.0.4'
+
+# Set fact for cdb_database (11g)
+- name: Set fact for cdb_database (11g)
+  set_fact:
+    cdb_database: "NO"
+  when: oracle_source_version == '11.2.0.4'
+
+# Obtaining PDBs name from instance 2 on racnode2 for tnsnames.ora (12c+)
+- name: Obtaining PDBs name from instance 2 on racnode2 for tnsnames.ora (12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}2"
+    sql_statement: "select name from v$pdbs where name NOT LIKE 'PDB%SEED';"
+    output_as_array: True    
+  register: sqlplusoutput20
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Set PDBs list (without PDB$SEED) as fact for tnsnames.ora (12c+)
+- name: Set PDBs list (without PDB$SEED) as fact for tnsnames.ora (12c+)
+  set_fact:
+    pdbs_list_without_pdbseed: "{{ sqlplusoutput20.sqlplus_message[0] }}"  
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Discovery of CRS data for tnsnames.ora on racnode2
+- name: Discovery of CRS data for tnsnames.ora on racnode2
+  become: yes
+  become_method: sudo
+  become_user: oracle
+  oracle_dbnode_discovery_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_gi_home: "{{ grid_target_ohome_dir }}"
+    accept_data_not_found: True
+  register: dbnode_discovery_output    
+
+# Set target_scan_dns_name fact for tnsnames.ora on racnode2 
+- name: Set target_scan_dns_name fact for tnsnames.ora on racnode2 
+  set_fact:
+    target_scan_dns_name: "{{ dbnode_discovery_output.scan_dns_name }}"   
+
+# Set target_scan_dns_domain fact for tnsnames.ora on racnode2
+- name: Set target_scan_dns_domain fact for tnsnames.ora on racnode2
+  set_fact:
+    target_scan_dns_domain: "{{ dbnode_discovery_output.dns_domain }}"    
+
+# Clean tnsnames.ora before new cluster one
+- name: Clean tnsnames.ora before new cluster one
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/network/admin/tnsnames.ora"
+
+# Upload tnsnames.ora file template for instance2 on racnode2 (multitenant with PDBs, 12c+)
+- name: Upload tnsnames.ora file template for instance2 on racnode2 (multitenant with PDBs, 12c+)
+  become: yes
+  become_method: sudo  
+  template:
+    src: "../templates/tnsnames.ora_multitenant.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/tnsnames.ora"
+    owner: "{{ oracle_user }}"   
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Upload tnsnames.ora file template for instance2 on racnode2 (no multitenant without PDBs, 11g)
+- name: Upload tnsnames.ora file template for instance2 on racnode2 (no multitenant without PDBs, 11g)
+  become: yes
+  become_method: sudo  
+  template:
+    src: "../templates/tnsnames.ora_11g.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/tnsnames.ora"
+    owner: "{{ oracle_user }}"   
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Starting all of the PDBs with ALTER PLUGGABLE DATABASE ALL OPEN (12c+)
+- name: Starting all of the PDBs with ALTER PLUGGABLE DATABASE ALL OPEN (12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}2"
+    sql_statement: "ALTER PLUGGABLE DATABASE ALL OPEN;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput20
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')  
+
+

@@ -1,0 +1,10 @@
+{
+"plug_into_cdb": "<NEWCDB>",
+"plug_as_pdb": "<NEWPDB>",
+"cdb_wallet_dir": "/opt/oracle/dcs/commonstore/wallets/tde/NEWCDB",
+"cdb_unique_name": "<NEWCDB_UNIQUE_NAME>",
+"cdb_wallet_password": "<SYSDBA_PASSWORD>",
+"export_import_tde_wallet": "True",
+"plug_temporal_tde_wallet_dir": "/home/oracle",
+"plug_temporal_tde_wallet_password": "aq12ws"
+}

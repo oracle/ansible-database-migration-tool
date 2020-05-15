@@ -1,0 +1,13 @@
+[source]
+<source_DBCS_SI_IP>
+[source:vars]
+ansible_user=opc
+ansible_ssh_private_key_file = </path/to/ssh/private_key>
+
+[target]
+<target_ExaCS_RAC_IP1>
+<target_ExaCS_RAC_IP2>
+[target:vars]
+ansible_user=opc
+ansible_ssh_private_key_file = </path/to/ssh/private_key>
+

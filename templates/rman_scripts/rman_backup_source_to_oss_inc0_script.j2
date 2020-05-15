@@ -1,0 +1,1 @@
+SET ENCRYPTION IDENTIFIED BY "{{ rman_password_on_transit }}" ONLY; run { {% for item in rman_channels %} allocate channel {{ item }} device type sbt PARMS "SBT_LIBRARY={{ lib_dir }}/libopc.so, SBT_PARMS=(OPC_PFILE={{ config_file }})" FORMAT "BACKUP_%U"; {% endfor %} BACKUP INCREMENTAL LEVEL 0 DATABASE PLUS ARCHIVELOG TAG="{{ oracle_source_database_sid }}"; }

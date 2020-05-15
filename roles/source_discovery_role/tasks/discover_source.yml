@@ -1,0 +1,256 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Discover source system
+#
+
+# Discover source database and GI
+- name: Discover source database and GI
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}" 
+  oracle_rdbms_discovery_module:
+    oracle_dbname: "{{ oracle_source_dbname }}"
+    etc_oratab_usage: True
+  register: source_db_discovery_results
+
+# Set facts related to source database and GI
+- name: Set facts related to source database and GI
+  set_fact:
+    oracle_source_crs_enabled: "{{ source_db_discovery_results.oracle_crs_enabled }}" 
+    oracle_source_database_sid: "{{ source_db_discovery_results.oracle_dbname }}" 
+    oracle_source_ohome_dir: "{{ source_db_discovery_results.oracle_home }}"
+    oracle_source_instances: "{{ source_db_discovery_results.oracle_database_instances }}"
+    oracle_source_servers: "{{ source_db_discovery_results.oracle_database_servers }}"
+
+# Set facts for database type (RAC/RACOneNode)
+- name: Set facts for database type (RAC/RACOneNode)
+  set_fact: 
+    oracle_source_RAC: "True"
+  when: (source_db_discovery_results.oracle_database_type == 'RAC') 
+
+# Set facts for database type (not RAC/RACOneNode)
+- name: Set facts for database type (not RAC/RACOneNode)
+  set_fact: 
+    oracle_source_RAC: "False"
+  when: (source_db_discovery_results.oracle_database_type == 'SINGLE') 
+
+# Set facts for database type (SINGLE)
+- name: Set facts for database type (SINGLE)
+  set_fact: 
+    oracle_source_SI: "True"
+  when: (source_db_discovery_results.oracle_database_type == 'SINGLE') 
+
+# Set facts for database type (not SINGLE)
+- name: Set facts for database type (not SINGLE)
+  set_fact: 
+    oracle_source_SI: "False"
+  when: (source_db_discovery_results.oracle_database_type != 'SINGLE') 
+
+# Set facts for database RACOneNode
+- name: Set facts for database RACOneNode
+  set_fact: 
+    oracle_source_RACOneNode: "True"
+  when: (source_db_discovery_results.oracle_database_type == 'RAC') and (source_db_discovery_results.oracle_database_cardinality == '1')
+
+# Set facts for database not RACOneNode
+- name: Set facts for database not RACOneNode
+  set_fact: 
+    oracle_source_RACOneNode: "False"
+  when: (source_db_discovery_results.oracle_database_type == 'SINGLE') or ((source_db_discovery_results.oracle_database_type == 'RAC') and (source_db_discovery_results.oracle_database_cardinality != '1'))
+
+# Set oracle_source_RAC to False when oracle_source_RAC is undefined and oracle_source_crs_enabled == False
+- name: Set oracle_source_RAC to False when oracle_source_RAC is undefined and oracle_source_crs_enabled == False
+  set_fact: 
+    oracle_source_RAC: "False"
+    oracle_source_RACOneNode: "False"
+    oracle_source_SI: "True"
+  when: (oracle_source_RAC is not defined) and (oracle_source_crs_enabled == False)
+
+# Discover source database DBID (SI)
+- name: Discover source database DBID (SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: 'select dbid from v$database;'
+    output_as_array: True
+  register: sqlplusoutput1
+  when: not oracle_source_RAC 
+
+# Set oracle_source_dbid fact (SI)
+- name: Set oracle_source_dbid fact (SI)
+  set_fact:
+    oracle_source_dbid: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+  when: not oracle_source_RAC
+
+# Discover source database DBID (RAC/RACOneNode)
+- name: Discover source database DBID (RAC/RACOneNode)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: 'select dbid from v$database;'
+    output_as_array: True
+  register: sqlplusoutput1
+  when: oracle_source_RAC or oracle_source_RACOneNode
+
+# Set oracle_source_dbid fact (RAC)
+- name: Set oracle_source_dbid fact (RAC)
+  set_fact:
+    oracle_source_dbid: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+  when: oracle_source_RAC or oracle_source_RACOneNode
+
+# Discover source database DB_UNIQUE_NAME (SI)
+- name: Discover source database DB_UNIQUE_NAME (SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: 'select db_unique_name from v$database;'
+    output_as_array: True
+  register: sqlplusoutput1
+  when: oracle_source_SI
+
+# Set oracle_source_database_unique_name fact (SI)
+- name: Set oracle_source_database_unique_name fact (SI)
+  set_fact:
+    oracle_source_database_unique_name: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+  when: oracle_source_SI 
+
+# Discover source database DB_UNIQUE_NAME (RAC/RACOneNode)
+- name: Discover source database DB_UNIQUE_NAME (RAC/RACOneNode)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: 'select db_unique_name from v$database;'
+    output_as_array: True
+  register: sqlplusoutput1
+  when: oracle_source_RAC or oracle_source_RACOneNode
+
+# Set oracle_source_database_unique_name fact (RAC)
+- name: Set oracle_source_database_unique_name fact (RAC)
+  set_fact:
+    oracle_source_database_unique_name: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+  when: oracle_source_RAC or oracle_source_RACOneNode   
+
+# Discover source database db version (SI)
+- name: Discover source database db version (SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: 'select substr(version,1,8) from v$instance;'
+    output_as_array: True
+  register: sqlplusoutput1
+  when: oracle_source_SI 
+
+# Set oracle_source_version fact (SI)
+- name: Set oracle_source_version fact (SI)
+  set_fact:
+    oracle_source_version: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+  when: oracle_source_SI 
+
+# Discover source database db version (RAC/RACOneNode)
+- name: Discover source database db version (RAC/RACOneNode)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: 'select substr(version,1,8) from v$instance;'
+    output_as_array: True
+  register: sqlplusoutput1 
+  when: oracle_source_RAC or oracle_source_RACOneNode
+
+# Set oracle_source_version fact (RAC/RACOneNode)
+- name: Set oracle_source_version fact (RAC/RACOneNode)
+  set_fact:
+    oracle_source_version: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+  when: oracle_source_RAC or oracle_source_RACOneNode
+
+# Discover source database wallet location (SI)
+- name: Discover source database wallet location (SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_source_database_unique_name }}"
+    sql_statement: 'select WRL_PARAMETER from v$encryption_wallet;'
+    output_as_array: True
+  register: sqlplusoutput1
+  when: oracle_source_SI 
+
+# Set oracle_source_wallet_dir fact (SI)
+- name: Set oracle_source_wallet_dir fact (SI)
+  set_fact:
+    oracle_source_wallet_dir: "{{ sqlplusoutput1.sqlplus_message[0][0] | regex_replace('^(?P<path1>.+)\\$ORACLE_UNQNAME(?P<path2>.+)$', '\\g<path1>' + oracle_source_database_unique_name + '\\g<path2>') | regex_replace('^(?P<path1>.+)/$', '\\g<path1>') }}" 
+  when: oracle_source_SI 
+
+# Discover source database wallet location (RAC/RACOneNode)
+- name: Discover source database wallet location (RAC/RACOneNode)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    oracle_unqname: "{{ oracle_source_database_unique_name }}"
+    sql_statement: 'select WRL_PARAMETER from v$encryption_wallet;'
+    output_as_array: True
+  register: sqlplusoutput1
+  when: oracle_source_RAC or oracle_source_RACOneNode
+
+# Set oracle_source_wallet_dir fact (RAC/RACOneNode)
+- name: Set oracle_source_wallet_dir fact (RAC/RACOneNode)
+  set_fact:
+    oracle_source_wallet_dir: "{{ sqlplusoutput1.sqlplus_message[0][0] | regex_replace('^(?P<path1>.+)\\$ORACLE_UNQNAME(?P<path2>.+)$', '\\g<path1>' + oracle_source_database_unique_name + '\\g<path2>') | regex_replace('^(?P<path1>.+)/$', '\\g<path1>') }}" 
+  when: oracle_source_RAC or oracle_source_RACOneNode
+
+# Check that the oracle_source_wallet_dir exists
+- name: Check that the oracle_source_wallet_dir exists
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  stat:
+    path: "{{ oracle_source_wallet_dir }}/ewallet.p12"
+  register: stat_result
+
+# Set TDE parameters after checking oracle_source_wallet_dir (False/True)
+- name: Set TDE parameters after checking oracle_source_wallet_dir (False/True)
+  set_fact:
+    tde_upload_to_oss: "{{ stat_result.stat.exists }}"
+    tde_download_from_oss: "{{ stat_result.stat.exists }}"
+
+# Show all discovered facts about source database
+- name: Show all discovered facts about source database
+  debug:
+    msg: 
+      - "oracle_source_RAC = {{ oracle_source_RAC }}"
+      - "oracle_source_RACOneNode = {{ oracle_source_RACOneNode }}"
+      - "oracle_source_SI = {{ oracle_source_SI }}"
+      - "oracle_source_instances = {{ oracle_source_instances }}"
+      - "oracle_source_servers = {{ oracle_source_servers }}"
+      - "oracle_source_database_sid = {{ oracle_source_database_sid }}"
+      - "oracle_source_ohome_dir = {{ oracle_source_ohome_dir }}"
+      - "oracle_source_dbid = {{ oracle_source_dbid }}"
+      - "oracle_source_database_unique_name = {{ oracle_source_database_unique_name }}"
+      - "oracle_source_version = {{ oracle_source_version }}"
+      - "oracle_source_wallet_dir = {{ oracle_source_wallet_dir }}"
+      - "tde_upload_to_oss = {{ tde_upload_to_oss }}"
+      - "tde_download_from_oss = {{ tde_download_from_oss }}"
+

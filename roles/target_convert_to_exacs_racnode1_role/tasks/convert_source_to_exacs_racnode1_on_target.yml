@@ -1,0 +1,576 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Convert SI to ExaCS RACNODE1
+#
+
+# Adding {{ rac_undo_tbs_prefix }}1 for the target racnode1
+- name: Adding {{ rac_undo_tbs_prefix }}1 for the target racnode1
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "create undo tablespace {{ rac_undo_tbs_prefix }}1 datafile '{{ grid_target_data_dg }}' size {{ rac_undo_tbs_start_size }} autoextend on;"  
+    ignore_ORA_errors: True
+  register: sqlplusoutput1
+
+# Adding {{ rac_undo_tbs_prefix }}x for the target racnode2+
+- name: Adding {{ rac_undo_tbs_prefix }}x for the target racnode2+
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "create undo tablespace {{ rac_undo_tbs_prefix }}{{ item }} datafile '{{ grid_target_data_dg }}' size {{ rac_undo_tbs_start_size }} autoextend on;"  
+    ignore_ORA_errors: True
+  with_sequence: start=2 end={{ target_exacs_host_count }} 
+  register: sqlplusoutput1
+
+# Make directory for audit trail on target racnode1
+- name: Make directory for audit trail on target racnode1
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}" 
+  file: path={{ oracle_target_racnode1_adump_dir }} state=directory    
+
+# Clean pfile on target for source db
+- name: Clean pfile on target for source db
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+
+# Clean spfile on target for source db
+- name: Clean spfile on target for source db
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/spfile{{ oracle_source_database_sid }}.ora"   
+
+# Create PFILE from single instance SPFILE 
+- name: Create PFILE from single instance SPFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: 'create pfile from spfile;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput6
+
+# Set cluster_database_instances=2 in pfile
+- name: Set cluster_database_instances=2 in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]cluster_database_instances="
+    line: "*.cluster_database_instances=2"
+    owner: "{{ oracle_user }}"
+
+# Set cluster_database=true in pfile
+- name: Set cluster_database=true in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]cluster_database="
+    line: "*.cluster_database=true"
+    owner: "{{ oracle_user }}" 
+
+# Set instance_number=1 in pfile
+- name: Set instance_number=1 in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]instance_number="
+    line: "{{ oracle_source_database_sid }}1.instance_number=1"
+    owner: "{{ oracle_user }}" 
+
+# Set instance_number=2 in pfile
+- name: Set instance_number=2 in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]instance_number="
+    line: "{{ oracle_source_database_sid }}2.instance_number=2"
+    owner: "{{ oracle_user }}"   
+
+# Set thread=1 in pfile
+- name: Set thread=1 in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]thread="
+    line: "{{ oracle_source_database_sid }}1.thread=1"
+    owner: "{{ oracle_user }}" 
+
+# Set thread=2 in pfile
+- name: Set thread=2 in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]thread="
+    line: "{{ oracle_source_database_sid }}2.thread=2"
+    owner: "{{ oracle_user }}"
+
+# Set {{ rac_undo_tbs_prefix }}1 tablespace in pfile
+- name: Set {{ rac_undo_tbs_prefix }}1 tablespace in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]undo_tablespace="
+    line: "{{ oracle_source_database_sid }}1.undo_tablespace='{{ rac_undo_tbs_prefix }}1'"
+    owner: "{{ oracle_user }}" 
+
+# Set {{ rac_undo_tbs_prefix }}2 tablespace in pfile
+- name: Set {{ rac_undo_tbs_prefix }}2 tablespace in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]undo_tablespace="
+    line: "{{ oracle_source_database_sid }}2.undo_tablespace='{{ rac_undo_tbs_prefix }}2'"
+    owner: "{{ oracle_user }}"
+
+# Set audit_file_dest for racnode1 in pfile
+- name: Set audit_file_dest for racnode1 in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]audit_file_dest="
+    line: "{{ oracle_source_database_sid }}1.audit_file_dest='{{ oracle_target_racnode1_adump_dir }}'"
+    owner: "{{ oracle_user }}"  
+  
+# Set audit_file_dest for racnode2 in pfile
+- name: Set audit_file_dest for racnode2 in pfile
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  lineinfile:
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+    regexp: "^[*][.]audit_file_dest="
+    line: "{{ oracle_source_database_sid }}2.audit_file_dest='{{ oracle_target_racnode2_adump_dir }}'"
+    owner: "{{ oracle_user }}" 
+
+# Clear out SPFILE from ASM for SI
+- name: Clear out SPFILE from ASM for SI
+  become: yes
+  become_method: sudo
+  become_user: "{{ grid_user }}"
+  oracle_asmcmd_module:
+    oracle_home: "{{ grid_target_ohome_dir }}"
+    oracle_sid: "{{ grid_oracle_database_sid }}"
+    asmcmd_script: 'rm -rf {{ grid_target_data_dg }}/{{ oracle_target_database_unique_name }}/spfile{{ oracle_source_database_sid }}.ora'
+
+# Shutdown immediate single instance on racnode1
+- name: Shutdown immediate single instance on racnode1
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: 'shutdown immediate;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput8
+
+# Create cluster SPFILE from PFILE
+- name: Create cluster SPFILE from PFILE
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "create spfile='{{ grid_target_data_dg }}/{{ oracle_target_database_unique_name }}/spfile{{ oracle_source_database_sid }}.ora' from pfile;"
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput7   
+
+# Create PFILE for racnode1
+- name: Create PFILE for racnode1
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  copy:
+    content: "SPFILE='{{ grid_target_data_dg }}/{{ oracle_target_database_unique_name }}/spfile{{ oracle_source_database_sid }}.ora'"
+    dest: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}1.ora"
+
+# Adding source database on the target to CRS registry (SRVCTL 12c+)
+- name: Adding source database on the target to CRS registry (SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    add_oh_to_command: True
+    srvctl_command: "add database"
+  register: srvctloutput1
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0')
+
+# Adding source database on the target to CRS registry (SRVCTL 11g)
+- name: Adding source database on the target to CRS registry (SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    add_oh_to_command: True
+    srvctl_command: "add database"
+    syntax_11g: True
+  register: srvctloutput1
+  when: oracle_source_version == '11.2.0.4'
+
+# Seting ORACLE_UNQNAME source database on the target (SRVCTL 12c+)
+- name: Seting ORACLE_UNQNAME source database on the target (SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    os_env: "ORACLE_UNQNAME={{ oracle_target_database_unique_name }}"
+    srvctl_command: "setenv database"
+  register: srvctloutput2
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0')
+
+# Seting TNS_ADMIN source database on the target (SRVCTL 12c+)
+- name: Seting TNS_ADMIN source database on the target (SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    os_env: "TNS_ADMIN={{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}"
+    srvctl_command: "setenv database"
+  register: srvctloutput2
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0')
+
+
+# Seting ORACLE_UNQNAME source database on the target (SRVCTL 11g)
+- name: Seting ORACLE_UNQNAME source database on the target (SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    os_env: "ORACLE_UNQNAME={{ oracle_target_database_unique_name }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "setenv database"
+    syntax_11g: True
+  register: srvctloutput2
+  when: oracle_source_version == '11.2.0.4'
+
+# Seting TNS_ADMIN source database on the target (SRVCTL 11g)
+- name: Seting TNS_ADMIN source database on the target (SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    os_env: "TNS_ADMIN={{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}"
+    srvctl_command: "setenv database"
+    syntax_11g: True
+  register: srvctloutput2
+  when: oracle_source_version == '11.2.0.4'
+
+# Adding source instance1 on the target to CRS registry (SRVCTL 12c+)
+- name: Adding source instance1 on the target to CRS registry (SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}1"
+    oracle_node: "{{ ansible_hostname }}"
+    srvctl_command: "add instance"
+  register: srvctloutput3 
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0')
+
+# Adding source instance1 on the target to CRS registry (SRVCTL 11g)
+- name: Adding source instance1 on the target to CRS registry (SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}1"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    oracle_node: "{{ ansible_hostname }}"
+    srvctl_command: "add instance"
+    syntax_11g: True
+  register: srvctloutput3 
+  when: oracle_source_version == '11.2.0.4'
+
+# Startup source instance1 on target racnode1 (SRVCTL 12c+)
+- name: Startup source instance1 on target racnode1 (SRVCTL 12c+) 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}1"
+    srvctl_command: "start instance"
+  register: srvctloutput4 
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0')
+
+# Startup source instance1 on target racnode1 (SRVCTL 11g)
+- name: Startup source instance1 on target racnode1 (SRVCTL 11g) 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}1"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "start instance"
+    syntax_11g: True
+  register: srvctloutput4 
+  when: oracle_source_version == '11.2.0.4'
+
+# Show wallet status for source instance1 on target racnode1 (SQLPLUS 12c+)
+- name: Show wallet status for source instance1 on target racnode1 (SQLPLUS 12c+) 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: 'select wrl_parameter, status, wallet_type from v$encryption_wallet;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput9
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0')
+
+# Show wallet status for source instance1 on target racnode1 (SQLPLUS 11g)
+- name: Show wallet status for source instance1 on target racnode1 (SQLPLUS 11g) 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: 'select * from v$encryption_wallet;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput9
+  when: oracle_source_version == '11.2.0.4'
+
+# Add entry to /etc/oratab for instance1 on racnode1
+- name: Add entry to /etc/oratab for instance1 on racnode1
+  become: yes
+  become_method: sudo  
+  lineinfile:
+    path: "/etc/oratab"
+    regexp: "^{{ oracle_source_database_sid }}1[:]"
+    line: "{{ oracle_source_database_sid }}1:{{ oracle_target_ohome_dir }}:N"
+    owner: "{{ oracle_user }}"  
+
+# Checking if database is CDB or non-CDB (12c+)
+- name: Checking if database is CDB or non-CDB (12c+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: "SELECT CDB FROM V$DATABASE;"
+    output_as_array: True
+  register: sqlplusoutput3
+  when: oracle_source_version != '11.2.0.4'
+
+# Set fact for cdb_database (12c+)
+- name: Set fact for cdb_database (12c+)
+  set_fact:
+    cdb_database: "{{ sqlplusoutput3.sqlplus_message[0][0] }}"
+  when: oracle_source_version != '11.2.0.4'
+
+# Set fact for cdb_database (11g)
+- name: Set fact for cdb_database (11g)
+  set_fact:
+    cdb_database: "NO"
+  when: oracle_source_version == '11.2.0.4'
+
+# Obtaining PDBs name from instance 1 on racnode1 (for tnsnames.ora)
+- name: Obtaining PDBs name from instance 1 on racnode1 (for tnsnames.ora)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: "select name from v$pdbs where name NOT LIKE 'PDB%SEED';"
+    output_as_array: True    
+  register: sqlplusoutput20
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Set PDBs list (without PDB$SEED) as fact (for tnsnames.ora)
+- name: Set PDBs list (without PDB$SEED) as fact (for tnsnames.ora)
+  set_fact:
+    pdbs_list_without_pdbseed: "{{ sqlplusoutput20.sqlplus_message[0] }}" 
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Discovery of CRS data (for tnsnames.ora) on racnode1
+- name: Discovery of CRS data (for tnsnames.ora) on racnode1
+  become: yes
+  become_method: sudo
+  become_user: oracle
+  oracle_dbnode_discovery_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_gi_home: "{{ grid_target_ohome_dir }}"
+    accept_data_not_found: True
+  register: dbnode_discovery_output    
+
+# Set target_scan_dns_name fact (for tnsnames.ora) on racnode1
+- name: Set target_scan_dns_name fact (for tnsnames.ora) on racnode1
+  set_fact:
+    target_scan_dns_name: "{{ dbnode_discovery_output.scan_dns_name }}"   
+
+# Set target_scan_dns_domain fact (for tnsnames.ora) on racnode2
+- name: Set target_scan_dns_domain fact (for tnsnames.ora) on racnode2
+  set_fact:
+    target_scan_dns_domain: "{{ dbnode_discovery_output.dns_domain }}"    
+
+# Clean tnsnames.ora before new cluster one
+- name: Clean tnsnames.ora before new cluster one
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}/tnsnames.ora"
+
+# Upload tnsnames.ora file template for instance1 on racnode1 (multitenant with PDBs)
+- name: Upload tnsnames.ora file template for instance1 on racnode1 (multitenant with PDBs)
+  become: yes
+  become_method: sudo  
+  template:
+    src: "../templates/tnsnames.ora_multitenant.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}/tnsnames.ora"
+    owner: "{{ oracle_user }}"   
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Upload tnsnames.ora file template for instance1 on racnode1 (no multitenant 11g without PDBs)
+- name: Upload tnsnames.ora file template for instance1 on racnode1 (no multitenant 11g without PDBs)
+  become: yes
+  become_method: sudo  
+  template:
+    src: "../templates/tnsnames.ora_11g.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}/tnsnames.ora"
+    owner: "{{ oracle_user }}"   
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Obtaining size of redo logs
+- name: Obtaining size of redo logs
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: "select unique bytes from v$log;"
+    output_as_array: True
+  register: sqlplusoutput1
+  when: oracle_source_RAC == 'False'
+
+# Set fact for size of redo
+- name: Set fact for size of redo
+  set_fact:
+    target_redo_size: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+  when: oracle_source_RAC == 'False'
+
+# Obtaining number of redo for thread 1
+- name: Obtaining number of redo for thread 1
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: "select trim(count(*)) from v$log where thread#=1;"
+    output_as_array: True
+  register: sqlplusoutput1
+  when: oracle_source_RAC == 'False'
+
+# Set fact for number of redo in thread 1
+- name: Set fact for number of redo in thread 1
+  set_fact:
+    target_redo_log_number_thread1: "{{ sqlplusoutput1.sqlplus_message[0][0] }}"        
+  when: oracle_source_RAC == 'False'
+
+# Adding redo thread 2+ group  to second target node and beyond (first redolog)
+- name: Adding redo thread 2+ to second node and beyond (first redolog)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: "alter database add logfile thread {{ item }} group {{ ((item | int) - 1) * (target_redo_log_number_thread1 | int) + 1 }} ('{{ grid_target_reco_dg }}') size {{ target_redo_size }} reuse;"
+  register: sqlplusoutput1
+  with_sequence: start=2 end={{ target_exacs_host_count | int }} 
+  when: oracle_source_RAC == 'False'
+
+# Adding redo thread 2+ group  to second target node and beyond (second redolog)
+- name: Adding redo thread 2+ to second node and beyond (second redolog)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: "alter database add logfile thread {{ item }} group {{ ((item | int) - 1) * (target_redo_log_number_thread1 | int) + 2 }} ('{{ grid_target_reco_dg }}') size {{ target_redo_size }} reuse;"
+  register: sqlplusoutput1
+  with_sequence: start=2 end={{ target_exacs_host_count | int }} 
+  when: oracle_source_RAC == 'False'
+
+# Enabling redo thread 2+ and beyond
+- name: Enabling redo thread 2+ and beyond
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    sql_statement: "alter database enable public thread {{ item }};"  
+  register: sqlplusoutput4  
+  with_sequence: start=2 end={{ target_exacs_host_count }}
+  when: oracle_source_RAC == 'False'  

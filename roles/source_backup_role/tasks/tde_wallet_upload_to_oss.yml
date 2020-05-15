@@ -1,0 +1,65 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# TDE Wallet upload to OSS
+#   
+
+# Pickup wallet location on the source (source RAC)
+- name: Pickup wallet location on the source (source RAC)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"  
+  oracle_oratns_discovery_module:
+    oracle_sid: "{{ oracle_source_database_sid }}1" 
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+  register: discovery_output1
+  when: (oracle_source_RAC == 'True') and (oracle_source_wallet_dir is not defined)
+
+# Pickup wallet location on the source (source SI)
+- name: Pickup wallet location on the source (source SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"  
+  oracle_oratns_discovery_module:
+    oracle_sid: "{{ oracle_source_database_sid }}" 
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+  register: discovery_output1
+  when: (oracle_source_RAC == 'False') and (oracle_source_wallet_dir is not defined)
+
+# Set Source Wallet Facts for Future Usage (derived)
+- name: Set Source Wallet Facts for Future Usage (derived)
+  set_fact:
+    source_wallet: "{{ discovery_output1.sqlnet_ora_encryption_wallet }}"  
+  when: oracle_source_wallet_dir is not defined
+  
+# Set Source Wallet Facts for Future Usage (not derived)
+- name: Set Source Wallet Facts for Future Usage (not derived)
+  set_fact:
+    source_wallet: "{{ oracle_source_wallet_dir }}"  
+  when: oracle_source_wallet_dir is defined
+  
+# Delete archive on the source
+- name: Delete archive on the source
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"  
+  file:
+    path: "{{ source_wallet }}/{{ oracle_source_database_sid }}_tde.tgz"  
+    state: absent
+
+# Archive wallet directory on the source
+- name: Archive wallet directory on the source
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"  
+  archive:
+    path: "{{ source_wallet }}/*.*"
+    dest: "{{ source_wallet }}/{{ oracle_source_database_sid }}_tde.tgz"  
+
+# Upload TDE file to OSS 
+- name: Upload TDE file to OSS 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  command: 'curl -v -X PUT -u "{{ oci_user }}:{{ oci_authtoken_pass }}" --upload-file {{ source_wallet }}/{{ oracle_source_database_sid }}_tde.tgz {{ oci_swiftobjectstorage_url }}/{{ oci_oss_container }}/{{ oracle_source_database_sid }}_tde.tgz'
+

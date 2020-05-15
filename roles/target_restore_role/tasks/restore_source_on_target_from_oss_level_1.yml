@@ -1,0 +1,191 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Restore on target source database from OSS (level 0)
+#   
+
+# Shutdown immediate instance (before CONTROLFILE restore)   
+- name: Shutdown immediate instance (before CONTROLFILE restore)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: 'shutdown immediate;'
+    output_as_array: True
+    ignore_ORA_errors: True    
+  register: sqlplusoutput1
+
+# Startup nomount instance (before CONTROLFILE restore)
+- name: Startup nomount instance (before CONTROLFILE restore)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: 'startup nomount'
+    output_as_array: True    
+  register: sqlplusoutput2   
+
+# Starting RMAN restore CONTROLFILE from OSS
+- name: Starting RMAN restore CONTROLFILE from OSS 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"  
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "{{ lookup('template', '../templates/rman_restore_controlfile_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_restore_controlfile_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30  
+  register: rmanoutput4
+
+# Changing instance state to MOUNT after successful CONTROLFILE restore
+- name: Changing instance state to MOUNT after successful CONTROLFILE restore
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: 'alter database mount;'
+    output_as_array: True    
+  register: sqlplusoutput10
+
+# Obtaining REDOlogs from source source
+- name: Obtaining REDOlogs from source source
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "select member from v$logfile order by group#;"
+    output_as_array: True    
+  register: sqlplusoutput11
+
+# Populating REDOlogs list
+- name: Populating REDOlogs list
+  set_fact:
+    source_redologs: "{{ sqlplusoutput11.sqlplus_message[0] }}" 
+
+# Changing the REDOlogs locations
+- name: Changing the REDOlogs locations
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "ALTER DATABASE RENAME FILE '{{ item }}' TO '{{ grid_target_reco_dg }}/{{ oracle_target_database_unique_name }}/ONLINELOG/redo1{{ source_redologs_loop_idx1 }}.log';"
+    output_as_array: True
+  loop: "{{ source_redologs }}"
+  loop_control:
+    index_var: source_redologs_loop_idx1      
+  register: sqlplusoutput12
+
+# Starting RMAN to clear channel device type disk connect ...
+- name: Starting RMAN to clear channel device type disk connect ...
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"  
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "CONFIGURE CHANNEL DEVICE TYPE DISK CLEAR;"
+    rman_logfile: "{{ rman_log_path }}/rman_configure_channel_device_type_disk_clear_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+  register: rmanoutput4
+
+# Starting RMAN to catalog ASM location (restored CONTROLFILE has original location)
+- name: Starting RMAN to catalog ASM location (restored CONTROLFILE has original location)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "CATALOG START WITH '{{ grid_target_data_dg }}/{{ oracle_target_database_unique_name }}/' noprompt;"
+    rman_logfile: "{{ rman_log_path }}/rman_catalog_start_with_ASM_DATA_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30
+  register: rmanoutput5  
+
+# Starting RMAN to list databasecopy all 
+- name: Starting RMAN to list databasecopy all 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "list datafilecopy all;"
+    rman_logfile: "{{ rman_log_path }}/rman_list_datafilecopy_all_after_backup_level_1_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30
+  register: rmanoutput6  
+
+- name: Starting RMAN to switch datafiles to copy (restored in level 0, located in ASM)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "switch database to copy;"
+    rman_logfile: "{{ rman_log_path }}/rman_switch_database_to_copy_after_backup_level_1_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30
+  register: rmanoutput7  
+
+- name: Setting inital empty RMAN channels fact table
+  set_fact:
+    rman_channels: [] 
+     
+- name: Generating RMAN channels fact table   
+  set_fact:
+    rman_channels: "{{ rman_channels }} + ['c{{ item }}']" 
+  with_sequence: start=1 end={{ rman_channels_number }}  
+  
+- name: Starting RMAN to recover DATABASE from OSS from backup level 1 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "{{ lookup('template', '../templates/rman_recover_database_from_backup_inc1_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_recover_database_from_backup_level_1_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30
+  register: rmanoutput8

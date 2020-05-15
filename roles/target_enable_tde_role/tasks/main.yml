@@ -1,0 +1,8 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Enable TDE on target
+#
+
+- import_tasks: enable_tde.yml
+ 

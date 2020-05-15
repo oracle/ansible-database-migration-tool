@@ -1,0 +1,53 @@
+#jinja2: trim_blocks:False
+# setup.json - please fill empty values of variables which have not been discovered/configured so far.
+{
+"opc_installer_zip_src_location": "",
+"oci_endpoint_url": "",
+"oci_tenancy": "",
+"oci_user": "",
+"oci_authtoken_pass": "",
+"oci_oss_container": "",
+
+"oracle_source_RAC": "{{ hostvars[groups['source'][0]].oracle_source_RAC }}",
+"oracle_source_database_sid": "{{ hostvars[groups['source'][0]].oracle_source_database_sid }}",
+"oracle_source_ohome_dir": "{{ hostvars[groups['source'][0]].oracle_source_ohome_dir }}",
+"oracle_source_dbid": "{{ hostvars[groups['source'][0]].oracle_source_dbid }}",
+"oracle_source_wallet_dir": "{{ hostvars[groups['source'][0]].oracle_source_wallet_dir }}",
+"oracle_source_database_unique_name": "{{ hostvars[groups['source'][0]].oracle_source_database_unique_name }}",
+"oracle_source_version": "{{ hostvars[groups['source'][0]].oracle_source_version }}",
+"oracle_source_sysdba_password": "",
+
+"oracle_target_ohome_dir": "{{ hostvars[groups['target'][0]].oracle_target_ohome_dir }}",
+"oracle_target_adump_dir": "{{ hostvars[groups['target'][0]].oracle_target_adump_dir }}",
+"oracle_target_racnode1_adump_dir": "{{ hostvars[groups['target'][0]].oracle_target_racnode1_adump_dir }}",
+"oracle_target_racnode2_adump_dir": "{{ hostvars[groups['target'][0]].oracle_target_racnode2_adump_dir }}",
+"grid_target_ohome_dir": "{{ hostvars[groups['target'][0]].grid_target_ohome_dir }}",
+"oracle_target_database_unique_name": "{{ hostvars[groups['target'][0]].oracle_target_database_unique_name }}",
+"oracle_target_wallet_dir": "{{ hostvars[groups['target'][0]].oracle_target_wallet_dir }}",
+"grid_oracle_database_sid": "{{ hostvars[groups['target'][0]].grid_oracle_database_sid }}",
+"grid_target_data_dg": "{{ hostvars[groups['target'][0]].grid_target_data_dg }}",
+"grid_target_reco_dg": "{{ hostvars[groups['target'][0]].grid_target_reco_dg }}",
+
+"oracle_target_database_oci_endpoint_url": "",
+"oracle_target_database_oci_tenancy": "",
+"oracle_target_database_oci_user": "",
+"oracle_target_database_oci_authtoken_pass": "",
+"oracle_target_database_oci_bucketname": "",
+
+"prepare_rman_on_source": "True",
+"tde_upload_to_oss": "{{ hostvars[groups['source'][0]].tde_upload_to_oss }}",
+"backup_level0": "True",
+"backup_level1": "True",
+
+"clear_source_on_target": "True",
+"prepare_rman_on_target": "True",
+"tde_download_from_oss": "{{ hostvars[groups['source'][0]].tde_download_from_oss }}",
+"restore_level0": "True",
+"restore_level1": "True",
+"open_resetlogs": "True",
+"datapatch_on_target": "True",
+"register_in_OCI": "False",
+
+"convert_to_RAC": "{{ hostvars[groups['target'][0]].convert_to_RAC }}",
+"convert_to_ExaCS": "{{ hostvars[groups['target'][0]].convert_to_ExaCS }}"
+}

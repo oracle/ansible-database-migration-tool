@@ -1,0 +1,386 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Configure manual backup with DBCLI (will utilize dedicated object store)
+# 
+
+# Show oracle_target_database_unique_name_upper
+- name: Show oracle_target_database_unique_name_upper
+  debug:
+    msg: "Looking for database = {{ oracle_target_database_unique_name_upper }}"
+
+# Crosscheck archivelog all to eliminate archivelogs in non-ASM location enherited from the source (RAC)
+- name: Crosscheck archivelog all to eliminate archivelogs in non-ASM location enherited from the source (RAC)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "crosscheck archivelog all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True   
+  register: rmanoutput1
+  when: (convert_to_RAC == 'True')
+
+# Delete expired archivelog all to eliminate archivelogs in non-ASM location enherited from the source (RAC)
+- name: Delete expired archivelog all to eliminate archivelogs in non-ASM location enherited from the source (RAC)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "delete noprompt expired archivelog all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True   
+  register: rmanoutput1
+  when: (convert_to_RAC == 'True')
+
+# Crosscheck archivelog all to eliminate archivelogs in non-ASM location enherited from the source (SI)
+- name: Crosscheck archivelog all to eliminate archivelogs in non-ASM location enherited from the source (SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "crosscheck archivelog all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True   
+  register: rmanoutput1
+  when: (convert_to_RAC == 'False')
+
+# Delete expired archivelog all to eliminate archivelogs in non-ASM location enherited from the source (SI)
+- name: Delete expired archivelog all to eliminate archivelogs in non-ASM location enherited from the source (SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "delete noprompt expired archivelog all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True   
+  register: rmanoutput1
+  when: (convert_to_RAC == 'False')
+
+#########################
+# Remove old backupconfig
+#########################
+
+# Execute dbcli list-backupconfigs to check
+- name: Execute dbcli list-backupconfigs to check
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'list-backupconfigs'
+  register: dbcli_registered_output4  
+
+# Check if DCS error
+- name: Check if DCS error
+  set_fact:
+    dcs_error: "{{ dbcli_registered_output4.dbcli_error }}"
+
+# Set backupconfigs_list fact (no DCS error)
+- name: Set backupconfigs_list fact (no DCS error)
+  set_fact:
+    backupconfigs_list: "{{ dbcli_registered_output4.dbcli_output }}"
+  when: (dcs_error == '')
+
+# Set backupconfigs_list fact (DCS error, empty list)
+- name: Set backupconfigs_list fact (DCS error, empty list)
+  set_fact:
+    backupconfigs_list: []
+  when: (dcs_error != '')
+
+# Show oci_backupconfig
+- name: Show oci_backupconfig
+  debug:
+    msg: "Looking for oci_backupconfig = {{ oci_backupconfig }}"
+
+# Set backupconfig_id fact 
+- name: Set backupconfig_id fact  
+  set_fact:
+    backupconfig_id: "{{ item.id | default() }}"
+  loop: "{{ backupconfigs_list }}"
+  when: 
+    - item.name == '{{ oci_backupconfig }}'
+
+# Show old backupconfig_id to be deleted
+- name: Show old backupconfig_id to be deleted
+  debug:
+    msg: "Removing old backupconfig_id {{ backupconfig_id }}"
+  when: (backupconfig_id is defined) and (dcs_error == '')
+
+# Show old backupconfig_id will not be deleted
+- name: Show old backupconfig_id will not be deleted
+  debug:
+    msg: "No old backupconfig to be removed"
+  when: (backupconfig_id is not defined) and (dcs_error == '')
+
+# Execute dbcli delete-backupconfig
+- name: Execute dbcli delete-backupconfig 
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'delete-backupconfig'
+    db_backup_id: '{{ backupconfig_id }}'
+    as_json: False
+  register: dbcli_registered_output3  
+  when: (backupconfig_id is defined) and (delete_old_backupconfigs == 'True') and (dcs_error == '')
+
+# Pause for 2 minutes before moving forward
+- name: Pause for 2 minutes before moving forward
+  pause:
+    minutes: 2    
+  when: (backupconfig_id is defined) and (delete_old_backupconfigs == 'True') and (dcs_error == '')
+
+#############################
+# Remove old objectstoreswift
+#############################
+
+# Execute dbcli list-objectstoreswifts to check
+- name: Execute dbcli list-objectstoreswifts to check
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'list-objectstoreswifts'
+  register: dbcli_registered_output2 
+
+# Check if DCS error
+- name: Check if DCS error
+  set_fact:
+    dcs_error: "{{ dbcli_registered_output2.dbcli_error }}"
+
+# Set swiftobject_list fact (no DCS error)
+- name: Set swiftobject_list fact (no DCS error)
+  set_fact:
+    swiftobject_list: "{{ dbcli_registered_output2.dbcli_output }}"
+  when: (dcs_error == '')
+
+# Set swiftobject_list fact (DCS error, empty list)
+- name: Set swiftobject_list fact (DCS error, empty list)
+  set_fact:
+    swiftobject_list: []
+  when: (dcs_error != '')  
+
+# Show swiftobject
+- name: Show swiftobject
+  debug:
+    msg: "Looking for swiftobject = {{ oracle_target_database_oci_bucketname }}"    
+
+# Set swiftobject_id fact 
+- name: Set swiftobject_id fact  
+  set_fact:
+    swiftobject_id: "{{ item.id | default() }}"
+  loop: "{{ swiftobject_list }}"
+  when: 
+    - item.name == '{{ oracle_target_database_oci_bucketname }}'
+
+# Show old swiftobject_id to be deleted
+- name: Show old swiftobject_id to be deleted
+  debug:
+    msg: "Removing old swiftobject_id {{ swiftobject_id }}"
+  when: (swiftobject_id is defined) and (dcs_error == '')
+
+# Show old swiftobject_id will not be deleted
+- name: Show old swiftobject_id will not be deleted
+  debug:
+    msg: "No old swiftobject to be removed"
+  when: (swiftobject_id is not defined) and (dcs_error == '')
+
+# Execute dbcli delete-objectstoreswift
+- name: Execute dbcli delete-objectstoreswift 
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'delete-objectstoreswift'
+    object_store_swift_id: '{{ swiftobject_id }}'
+    as_json: False
+  register: dbcli_registered_output1 
+  when: (swiftobject_id is defined) and (delete_old_objectstoreswift == 'True') and (dcs_error == '')
+
+#############################
+# Create new objectstoreswift
+#############################
+
+# Execute dbcli create-objectstoreswift
+- name: Execute dbcli create-objectstoreswift 
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'create-objectstoreswift'
+    object_store_swift_name: '{{ oracle_target_database_oci_bucketname }}'
+    object_store_swift_tenant_name: '{{ oracle_target_database_oci_tenancy }}'
+    object_store_swift_user_name: '{{ oracle_target_database_oci_user }}'
+    object_store_swift_endpointurl: '{{ oracle_target_database_oci_endpoint_url }}'
+    object_store_swift_user_pass: '{{ oracle_target_database_oci_authtoken_pass }}'
+    as_json: False
+  register: dbcli_registered_output1 
+  when: (create_new_objectstoreswift == 'True')
+
+# Pause for 1 minute before moving forward
+- name: Pause for 1 minute before moving forward
+  pause:
+    minutes: 1 
+  when: (create_new_objectstoreswift == 'True')  
+
+# Execute dbcli list-objectstoreswifts to check
+- name: Execute dbcli list-objectstoreswifts to check
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'list-objectstoreswifts'
+  register: dbcli_registered_output2 
+
+# Set swiftobject_list fact 
+- name: Set swiftobject_list fact  
+  set_fact:
+    swiftobject_list: "{{ dbcli_registered_output2.dbcli_output }}"
+
+# Set swiftobject_id fact 
+- name: Set swiftobject_id fact  
+  set_fact:
+    swiftobject_id: "{{ item.id | default() }}"
+  loop: "{{ swiftobject_list }}"
+  when: 
+    - item.name == '{{ oracle_target_database_oci_bucketname }}' 
+
+# Show new swiftobject_id which has been created
+- name: Show new swiftobject_id which has been created
+  debug:
+    msg: "Created new swiftobject_id is {{ swiftobject_id }}"
+  when: swiftobject_id is defined
+    
+#########################
+# Create new backupconfig
+#########################
+
+# Execute dbcli create-backupconfig
+- name: Execute dbcli create-backupconfig 
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'create-backupconfig'
+    db_backup_destination: 'OBJECTSTORE'
+    db_backup_container: '{{ oracle_target_database_oci_bucketname }}'
+    db_backup_objectstoreswiftId: '{{ swiftobject_id }}'
+    db_backup_recoverywindow: '30'
+    db_backup_name: '{{ oci_backupconfig }}'
+    as_json: False
+  register: dbcli_registered_output3
+  when: (create_new_backupconfig == 'True')  
+
+# Pause for 2 minutes before checking dbcli list-backupconfigs
+- name: Pause for 2 minutes before checking dbcli list-backupconfigs
+  pause:
+    minutes: 2
+  when: (create_new_backupconfig == 'True')    
+
+# Execute dbcli list-backupconfigs to check
+- name: Execute dbcli list-backupconfigs to check
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'list-backupconfigs'
+  register: dbcli_registered_output4  
+
+# Set backupconfigs_list fact 
+- name: Set backupconfigs_list fact  
+  set_fact:
+    backupconfigs_list: "{{ dbcli_registered_output4.dbcli_output }}"
+
+# Set backupconfig_id fact 
+- name: Set backupconfig_id fact  
+  set_fact:
+    backupconfig_id: "{{ item.id }}"
+  loop: "{{ backupconfigs_list }}"
+  when: 
+    - item.name == '{{ oci_backupconfig }}' 
+
+# Show new backupconfig_id which has been created
+- name: Show new backupconfig_id which has been created
+  debug:
+    msg: "Created new backupconfig_id is {{ backupconfig_id }}"
+  when: backupconfig_id is defined
+
+########################################
+# Update database with new backupconfig
+########################################
+
+# Execute dbcli list-databases to check
+- name: Execute dbcli list-databases to check
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'list-databases'
+  register: dbcli_registered_output4  
+
+# Set databases_list fact 
+- name: Set databases_list fact  
+  set_fact:
+    databases_list: "{{ dbcli_registered_output4.dbcli_output }}"
+
+# Set database_id fact 
+- name: Set database_id fact  
+  set_fact:
+    database_id: "{{ item.id }}"
+  loop: "{{ databases_list }}"
+  when: 
+    - item.databaseUniqueName == '{{ oracle_target_database_unique_name_upper }}' 
+
+# Execute dbcli update-database
+- name: Execute dbcli update-database  
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'update-database'
+    db_id: '{{ database_id }}'
+    register_database_backupconfigid: '{{ backupconfig_id }}'
+    as_json: False
+  register: dbcli_registered_output7 
+  when: (database_id is defined) and (update_database_with_new_backupconfig == 'True')
+
+# Pause for 1 minute before moving forward
+- name: Pause for 3 minutes before moving forward
+  pause:
+    minutes: 3  
+  when: (database_id is defined) and (update_database_with_new_backupconfig == 'True')
+
+# Execute dbcli list-databases 
+- name: Execute dbcli list-databases  
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'list-databases'
+  register: dbcli_registered_output8 
+
+########################################
+# Create backups for database
+########################################
+
+# Execute dbcli create-backup
+- name: Execute dbcli create-backup
+  become: yes
+  become_method: sudo   
+  oracle_dbcli_module:
+    dbcli_command: 'create-backup'
+    db_id: '{{ database_id }}'
+    create_backup_backup_type: 'Longterm'
+    create_backup_component: 'Database'
+    create_backup_longterm_keep_days: '30'
+    create_backup_tag: 'Longterm_{{ oracle_target_database_unique_name }}'
+    as_json: False
+  register: dbcli_registered_output7 
+  when: (database_id is defined) and (create_backup_longterm_30_days == 'True')  
+
+
+
+
+  
+ 

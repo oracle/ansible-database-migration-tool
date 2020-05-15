@@ -1,0 +1,9 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+
+# Test and validate source on target OCI DBSystem 
+- name: Test and validate source on target OCI DBSystem
+  hosts: target
+  roles:
+    - target_tests_and_validation_role

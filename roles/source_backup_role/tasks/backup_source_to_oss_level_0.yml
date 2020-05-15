@@ -1,0 +1,101 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Backup of the source to OSS (level 0)
+#
+
+# Obtain SBT_TAPE Channel Parameters - library directory (source RAC)
+- name: Obtain SBT_TAPE Channel Parameters - library directory (source RAC)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    rman_script: "show all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True 
+    output_config_channel_sbt_tape_parms_sbt_library_dir: True 
+    output_config_channel_sbt_tape_parms_sbt_opc_pfile: True   
+  register: rmanoutput1
+  when: (prepare_rman_on_source == 'False') and (backup_level0 == 'True') and (oracle_source_RAC == 'True')
+
+# Setting RMAN lib_dir and config_file fact table (source RAC)
+- name: Setting RMAN lib_dir and config_file fact table (source RAC)
+  set_fact:
+     lib_dir: "{{ rmanoutput1.config_channel_sbt_tape_parms_sbt_library_dir[0] }}"
+     config_file: "{{ rmanoutput1.config_channel_sbt_tape_parms_sbt_opc_pfile[0] }}"
+  when: (prepare_rman_on_source == 'False') and (backup_level0 == 'True') and (oracle_source_RAC == 'True')  
+
+# Obtain SBT_TAPE Channel Parameters - library directory (source SI)
+- name: Obtain SBT_TAPE Channel Parameters - library directory (source SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    rman_script: "show all;"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True 
+    output_config_channel_sbt_tape_parms_sbt_library_dir: True 
+    output_config_channel_sbt_tape_parms_sbt_opc_pfile: True  
+  register: rmanoutput1
+  when: (prepare_rman_on_source == 'False') and (backup_level0 == 'True') and (oracle_source_RAC == 'False')
+
+# Setting RMAN lib_dir and config_file fact table (source SI)
+- name: Setting RMAN lib_dir and config_file fact table (source SI)
+  set_fact:
+     lib_dir: "{{ rmanoutput1.config_channel_sbt_tape_parms_sbt_library_dir[0] }}"
+     config_file: "{{ rmanoutput1.config_channel_sbt_tape_parms_sbt_opc_pfile[0] }}"
+  when: (prepare_rman_on_source == 'False') and (backup_level0 == 'True') and (oracle_source_RAC == 'False')  
+
+# Setting inital empty RMAN channels fact table
+- name: Setting inital empty RMAN channels fact table
+  set_fact:
+    rman_channels: [] 
+
+# Generating RMAN channels fact table
+- name: Generating RMAN channels fact table   
+  set_fact:
+    rman_channels: "{{ rman_channels }} + ['c{{ item }}']" 
+  with_sequence: start=1 end={{ rman_channels_number }}  
+
+# Starting RMAN backup incremental level 0 for database plus archivelog to OSS on the source (source RAC) 
+- name: Starting RMAN backup incremental level 0 for database plus archivelog to OSS on the source (source RAC)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    rman_script: "{{ lookup('template', '../templates/rman_backup_source_to_oss_inc0_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_source_backup_inc0_to_oss_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True 
+  async: "{{ ansible_async_backup_source_timeout }}" 
+  poll: 30     
+  register: rmanoutput1
+  when: oracle_source_RAC == 'True'
+
+# Starting RMAN backup incremental level 0 for database plus archivelog to OSS on the source (source SI) 
+- name: Starting RMAN backup incremental level 0 for database plus archivelog to OSS on the source (source SI)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"     
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_source_ohome_dir }}"
+    rman_script: "{{ lookup('template', '../templates/rman_backup_source_to_oss_inc0_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_source_backup_inc0_to_oss_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True 
+  async: "{{ ansible_async_backup_source_timeout }}" 
+  poll: 30     
+  register: rmanoutput1
+  when: oracle_source_RAC == 'False'
+ 

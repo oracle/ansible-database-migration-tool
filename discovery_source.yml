@@ -1,0 +1,9 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+
+# Discover source OCI-C DBCS 
+- name: Discover source OCI-C DBCS 
+  hosts: source[0] 
+  roles:
+    - source_discovery_role 

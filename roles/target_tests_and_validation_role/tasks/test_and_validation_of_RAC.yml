@@ -1,0 +1,819 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Test and validation of RAC 
+# 
+
+# Show target_exacs_hostname_index
+- name: Show target_exacs_hostname_index
+  debug:
+    msg: "target_exacs_hostname_index = {{ target_exacs_hostname_index }}"
+
+# Show target_exacs_oracle_instance_index
+- name: Show target_exacs_oracle_instance_index
+  debug:
+    msg: "target_exacs_oracle_instance_index = {{ target_exacs_oracle_instance_index }}"
+
+# Check if file {{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log exist and remove it
+- name: Check if file {{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log exist and remove it
+  file: 
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    state: absent 
+    owner: "{{ oracle_user }}"
+    group: oinstall 
+    mode: 0755
+  become: yes
+  become_user: "{{ oracle_user }}"
+
+# Create report file {{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log
+- name: Create report file {{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log
+  file: 
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    state: touch 
+    owner: "{{ oracle_user }}" 
+    group: oinstall 
+    mode: 0755
+  become: yes
+  become_user: "{{ oracle_user }}"
+
+# Checking if database is CDB or non-CDB (12c+)
+- name: Checking if database is CDB or non-CDB (12c+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "SELECT CDB FROM V$DATABASE;"
+    output_as_array: True
+  register: sqlplusoutput3
+  when: oracle_source_version != '11.2.0.4'
+
+# Set fact for cdb_database (12c+)
+- name: Set fact for cdb_database (12c+)
+  set_fact:
+    cdb_database: "{{ sqlplusoutput3.sqlplus_message[0][0] }}"
+  when: oracle_source_version != '11.2.0.4'
+
+# Set fact for cdb_database (11g)
+- name: Set fact for cdb_database (11g)
+  set_fact:
+    cdb_database: "NO"
+  when: oracle_source_version == '11.2.0.4'
+  
+- name: Insert Banner 1
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '##########################################################################
+
+    # This report shows the tests after migration from OCI-C RAC to OCI RAC! #
+    
+    ##########################################################################
+
+
+    Database Instance Name: {{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}
+
+    Database Unique Name:   {{ oracle_target_database_unique_name }}
+
+    Database Oracle Home:   {{ oracle_target_ohome_dir }}
+    
+    Database Version:       {{ oracle_source_version }}
+
+    Database Multitenant:   {{ cdb_database }}
+
+    OCI ExaCS Platform:     {{ convert_to_ExaCS }}    
+
+    OCI RAC hostname:       {{ ansible_hostname }}
+
+
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+ 
+# Obtaining status of source database on the target (taken from to CRS registry with SRVCTL 11g)
+- name: Obtaining status of source database on the target (taken from to CRS registry with SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "status database"
+    oracle_unqname: "{{ oracle_source_database_sid }}"
+    syntax_11g: True
+  register: srvctloutput10  
+  when: oracle_source_version == '11.2.0.4'  
+
+# Set srvctloutput fact (11g)
+- name: Set srvctloutput fact
+  set_fact:
+    srvctloutput: "{{ srvctloutput10  }}"  
+  when: oracle_source_version == '11.2.0.4' 
+
+# Show status of source database on the target again (taken from to CRS registry with SRVCTL 12c+)
+- name: Show status of source database on the target again (taken from to CRS registry with SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "status database"
+  register: srvctloutput10  
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0')
+
+# Set srvctloutput fact (12c+)
+- name: Set srvctloutput fact
+  set_fact:
+    srvctloutput: "{{ srvctloutput10 }}"  
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0')
+
+#
+# Validation 1
+#
+
+# Insert Validation 1 for SRVCTL Status (title)
+- name: Insert Validation 1 for SRVCTL Status (title)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: 'TEST_1: Checking status of databases on all nodes
+
+    ########################################################
+
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+
+# Insert "Executed command " topic
+- name: Insert Check for SRVCTL Status (srvctl_command)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: 'Executed command:
+
+    {{ srvctloutput.srvctl_command }}
+    
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+
+# Insert "Command output" topic
+- name: Insert "Command output" topic
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: 'Command output: 
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+
+# Insert Check for SRVCTL Status (srvctl_output)
+- name: Insert Check for SRVCTL Status (srvctl_output)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ srvctloutput.srvctl_output }}"
+
+#
+# Validation 2
+#
+
+
+# Insert Validation 2 of PDBs (title)
+- name: Insert Validation 2 of PDBs (title), 12c+
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_2: Checking PDBs status
+
+    ########################################################
+    
+    
+    Status of PDBs:
+
+
+    CON_ID     CON_NAME                       OPEN MODE  RESTRICTED
+    
+    ---------- ------------------------------ ---------- ----------
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Insert Validation 2 of PDBs (title)
+- name: Insert Validation 2 of PDBs (title), 11g
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_2: Checking PDBs status
+
+    ########################################################
+    
+    
+    No PDBs (it is not multitenant database = 11.2.0.4 or non-CDB 12c+)
+
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False) 
+
+
+# Show status of PDBs (12c+)
+- name: Show status of PDBs (12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "show pdbs"
+  register: sqlplusoutput10  
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Set srvctloutput fact (12c+)
+- name: Set srvctloutput fact (12c+)
+  set_fact:
+    sqlplusoutput: "{{ sqlplusoutput10.sqlplus_message[0] }}"  
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Insert status of PDB (sqlplus, 12c+)
+- name: Insert status of PDB (sqlplus, 12c+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ sqlplusoutput }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+#
+# Validation 3 (12c+)
+#
+
+# Insert Validation 3 for temp files (12c+)
+- name: Insert Validation 3 for temp files (12c+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_3: Checking TEMPFILES status (including PDBs)
+
+    ########################################################
+    
+   
+    CON_ID     STATUS  ENABLED    TEMPFILE NAME                                                                              
+    
+    ---------- ------- ---------- -------------------------------------------------------------------------------- 
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Obtain tempfiles status (12c+)
+- name: Obtain tempfiles status (12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "select con_id, status, enabled, rtrim(name) from v$tempfile order by con_id;"
+  register: sqlplusoutput10  
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Set srvctloutput fact (12c+)
+- name: Set srvctloutput fact (12c+)
+  set_fact:
+    sqlplusoutput: "{{ sqlplusoutput10.sqlplus_message[0] }}"  
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Insert status of tempfiles (sqlplus, 12c+)
+- name: Insert status of tempfiles (sqlplus, 12c+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ sqlplusoutput }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+#
+# Validation 3 (11g)
+#
+
+# Insert Validation 3 for temp files (11g or non-CDB 12c+)
+- name: Insert Validation 3 for temp files (11g or non-CDB 12c+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_3: Checking TEMPFILES status 
+
+    ########################################################
+    
+   
+    STATUS  ENABLED    TEMPFILE NAME                                                                              
+    
+    ------- ---------- -------------------------------------------------------------------------------- 
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Obtain tempfiles status (11g)
+- name: Obtain tempfiles status (11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "select status, enabled, rtrim(name) from v$tempfile;"
+  register: sqlplusoutput10  
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Set srvctloutput fact (11g)
+- name: Set srvctloutput fact (11g)
+  set_fact:
+    sqlplusoutput: "{{ sqlplusoutput10.sqlplus_message[0] }}"  
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+ 
+# Insert status of tempfiles (sqlplus, 11g)
+- name: Insert status of tempfiles (sqlplus, 11g)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ sqlplusoutput }}"
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+#
+# Validation 4 (11g+)
+#
+
+# Insert Validation 4 for log files (11g+)
+- name: Insert Validation 4 for log files (11g+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_4: Checking REDO LOGFILES status 
+
+    ########################################################
+    
+   
+    GROUP#     THREAD#    STATUS  LOG FILE NAME
+
+    ---------- ---------- ------- --------------------------------------------------------------------------------
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  
+# Obtain logfiles status (11g+)
+- name: Obtain logfiles status (11g+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "select a.group#, a.thread#, b.status, rtrim(b.member) from v$log a, v$logfile b where a.group#=b.group#;"
+#    sql_statement: "select group#, status, rtrim(member) from v$logfile order by group#;"
+  register: sqlplusoutput10  
+ 
+# Set srvctloutput fact (11g+)
+- name: Set srvctloutput fact (11g+)
+  set_fact:
+    sqlplusoutput: "{{ sqlplusoutput10.sqlplus_message[0] }}"  
+  
+# Insert status of logfiles (sqlplus, 11g+)
+- name: Insert status of logfiles (sqlplus, 11g+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ sqlplusoutput }}"
+
+#
+# Validation 5 (12c+)
+#
+
+# Insert Validation 5 for data files (12c+)
+- name: Insert Validation 5 for data files (12c+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_5: Checking DATAFILES status (including PDBs)
+
+    ########################################################
+    
+
+    CON_ID     STATUS  ENABLED    BYTES      DATAFILE NAME                                                                             
+    
+    ---------- ------- ---------- ---------- -------------------------------------------------------------------------- 
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Obtain datafiles status (12c+)
+- name: Obtain datafiles status (12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "select con_id, status, enabled, bytes, rtrim(name) from v$datafile order by con_id;"
+  register: sqlplusoutput10  
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Set srvctloutput fact (12c+)
+- name: Set srvctloutput fact (12c+)
+  set_fact:
+    sqlplusoutput: "{{ sqlplusoutput10.sqlplus_message[0] }}"  
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Insert status of datafiles (sqlplus, 12c+)
+- name: Insert status of datafiles (sqlplus, 12c+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ sqlplusoutput }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+#
+# Validation 5 (11g)
+#
+
+# Insert Validation 5 for data files (11g or non-CDB 12c+)
+- name: Insert Validation 5 for data files (11g or non-CDB 12c+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_5: Checking DATAFILES status 
+
+    ########################################################
+    
+
+    STATUS  ENABLED    BYTES      DATAFILE NAME                                                                             
+    
+    ------- ---------- ---------- -------------------------------------------------------------------------- 
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Obtain datafiles status (11g or non-CDB 12c+)
+- name: Obtain datafiles status (11g or non-CDB 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "select status, enabled, bytes, rtrim(name) from v$datafile;"
+  register: sqlplusoutput10  
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False) 
+
+# Set srvctloutput fact (11g)
+- name: Set srvctloutput fact (11g)
+  set_fact:
+    sqlplusoutput: "{{ sqlplusoutput10.sqlplus_message[0] }}"  
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Insert status of datafiles (sqlplus, 11g)
+- name: Insert status of datafiles (sqlplus, 11g)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ sqlplusoutput }}"
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+#
+# Validation 6 
+#
+
+# Insert Validation 6 for TDE 
+- name: Insert Validation 6 for TDE
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_6: Checking TDE status (v$encryption_wallet)
+
+    ########################################################
+    
+
+    WRL_TYPE             STATUS             WRL_PARAMETER                                                                           
+    
+    -------------------- ------------------ -------------------------------------------------------------------------- 
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+
+# Set tns_admin fact (not ExaCS)
+- name: Set tns_admin fact (not ExaCS)
+  set_fact:
+    tns_admin: "{{ oracle_target_ohome_dir }}/network/admin"
+  when: (convert_to_ExaCS == 'False')    
+
+# Set tns_admin fact (ExaCS)
+- name: Set tns_admin fact (ExaCS)
+  set_fact:
+    tns_admin: "{{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}"
+  when: (convert_to_ExaCS == 'True') 
+
+# Obtain datafiles status 
+- name: Obtain TDE status 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    tns_admin: "{{ tns_admin }}"
+    sql_statement: "select WRL_TYPE, STATUS, rtrim(WRL_PARAMETER) from v$encryption_wallet;"
+  register: sqlplusoutput10  
+
+# Set srvctloutput fact 
+- name: Set srvctloutput fact 
+  set_fact:
+    sqlplusoutput: "{{ sqlplusoutput10.sqlplus_message[0] }}"  
+
+# Insert status of TDE 
+- name: Insert status of TDE 
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ sqlplusoutput }}"
+
+
+# Insert PDB TDE status
+- name: Insert PDB TDE status
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    PDB    WRL_TYPE             STATUS             WRL_PARAMETER                                                                           
+    
+    ------ -------------------- ------------------ -------------------------------------------------------------------------- 
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Obtaining PDBs names (without PDB$SEED) (12.1+)
+- name: Obtaining PDBs names (without PDB$SEED) (12.1+) 
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "select name from v$pdbs where name NOT LIKE 'PDB%SEED';"
+    output_as_array: True
+  register: sqlplusoutput20
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Set PDBs list (without PDB$SEED) as fact (12.1+)
+- name: Set PDBs list (without PDB$SEED) as fact (12.1+)
+  set_fact:
+    pdbs_list_without_pdbseed: "{{ sqlplusoutput20.sqlplus_message[0] }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Obtaining TDE status for PDBs (12.1+)
+- name: Obtaining TDE status for PDBs (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "select '{{ item }}   '||WRL_TYPE, STATUS, rtrim(WRL_PARAMETER) from v$encryption_wallet;"
+    pdb_service: "{{ item }}"
+    tns_admin: "{{ tns_admin }}"
+    set_container: True
+    ignore_ORA_errors: True
+    output_as_array: True
+  loop: "{{ pdbs_list_without_pdbseed }}"
+  register: sqlplusoutput21
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Set PDB's TDE fact (12.1+)
+- name: Set PDB's TDE fact (12.1+)
+  set_fact:
+    sqlplusoutput: "{{ sqlplusoutput21.results }}" 
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Insert status of PDB's TDE (12.1+)
+- name: Insert status of PDB's TDE (12.1+)
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item.sqlplus_message[0][1] }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ sqlplusoutput }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+#
+# Validation 7 
+#
+
+# Insert Validation 7 for ORA-00600 errors in alert log 
+- name: Insert Validation 7 for ORA-00600 errors in alert log 
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_7: Checking alertlog for ORA-00600 Errors 
+
+    ########################################################
+    
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  
+# Obtain trace directory in DIAG
+- name: Obtain trace directory in DIAG
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "select value from v$diag_info where name = 'Diag Trace';"
+  register: sqlplusoutput10  
+
+# Set diag_trace fact 
+- name: Set diag_trace fact 
+  set_fact:
+    diag_trace: "{{ sqlplusoutput10.sqlplus_message[0][0] }}"  
+
+# Looking for ORA-00600 in alertlog via grep
+- name: Looking for ORA-00600 in alertlog via grep
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  shell: "grep -ir 'ORA-00600:' alert_{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}.log"
+  args:
+    chdir: "{{ diag_trace }}"
+  register: grepORA600output
+  ignore_errors: true
+
+# Debug
+- name: Debug
+  debug:
+   var: grepORA600output.stdout_lines
+
+# Insert alert log file name
+- name: Insert alert log file name 
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    Checked alertlog file: {{ diag_trace }}/alert_{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}.log
+
+
+    Results of check:
+
+    (...)
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+
+# Insert ORA-00600 errors into report
+- name: Insert ORA-00600 errors into report
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ grepORA600output.stdout_lines }}"
+  when: grepORA600output.stdout != ""
+
+# Insert no ORA-600 errors into report
+- name: Insert no ORA-600 errors into report
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    No ORA-00600 Errors.
+
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  when: grepORA600output.stdout == ""
+
+#
+# Validation 8 
+#
+
+# Insert Validation 8 for ORA-07445 errors in alert log 
+- name: Insert Validation 8 for ORA-07445 errors in alert log 
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    TEST_8: Checking alertlog for ORA-07445
+
+    ########################################################
+    
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  
+# Obtain trace directory in DIAG
+- name: Obtain trace directory in DIAG
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}"
+    sql_statement: "select value from v$diag_info where name = 'Diag Trace';"
+  register: sqlplusoutput10  
+
+# Set diag_trace fact 
+- name: Set diag_trace fact 
+  set_fact:
+    diag_trace: "{{ sqlplusoutput10.sqlplus_message[0][0] }}"  
+
+# Looking for ORA-07445 in alertlog via grep
+- name: Looking for ORA-07445 in alertlog via grep
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  shell: "grep -ir 'ORA-07445:' alert_{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}.log"
+  args:
+    chdir: "{{ diag_trace }}"
+  register: grepORA7445output
+  ignore_errors: true
+
+# Debug
+- name: Debug
+  debug:
+   var: grepORA7445output.stdout_lines
+
+# Insert alert log file name
+- name: Insert alert log file name 
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    Checked alertlog file: {{ diag_trace }}/alert_{{ oracle_source_database_sid }}{{ target_exacs_oracle_instance_index }}.log
+
+
+    Results of check:
+
+    (...)
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"   
+
+# Insert ORA-07445 errors into report
+- name: Insert ORA-07445 errors into report
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '{{ item }}'
+  become: yes
+  become_user: "{{ oracle_user }}"
+  loop: "{{ grepORA7445output.stdout_lines }}"
+  when: grepORA7445output.stdout != ""
+
+# Insert no ORA-07445 errors into report
+- name: Insert no ORA-07445 errors into report
+  lineinfile:
+    path: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    line: '
+
+    No ORA-07445 Errors.
+
+    '
+  become: yes
+  become_user: "{{ oracle_user }}"
+  when: grepORA7445output.stdout == ""  
+
+# Download report from remote host to local host reports subdirectory
+- name: Download report from remote host to local host reports subdirectory
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}" 
+  fetch:
+    src: "{{ reports_log_path }}/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}.log"
+    dest: "./reports/report_after_setup_source_db_{{ oracle_source_database_sid }}_on_target_host_{{ ansible_hostname }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    flat: yes
+

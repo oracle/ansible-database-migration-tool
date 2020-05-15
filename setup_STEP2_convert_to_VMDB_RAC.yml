@@ -1,0 +1,16 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+
+# Convert source SI to target RAC on OCI DBSystem (racnode1)
+- name: Convert source SI to target RAC on OCI DBSystem (racnode1)
+  hosts: target[0]
+  roles: 
+    - target_convert_to_racnode1_role
+
+# Convert source SI to target RAC on OCI DBSystem (racnode2)
+- name: Convert source SI to target RAC on OCI DBSystem (racnode2)
+  hosts: target[1]
+  roles: 
+    - target_convert_to_racnode2_role
+

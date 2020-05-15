@@ -1,0 +1,47 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+
+- name: Display oracle_source_dbname and oracle_target_dbname
+  hosts: localhost
+  tasks:
+
+  # Display oracle_source_dbname 
+  - name: Display oracle_source_dbname 
+    debug: 
+      msg: "oracle_source_dbname = '{{ oracle_source_dbname }}'"
+    when: oracle_source_dbname is defined
+
+  # Display oracle_target_dbname 
+  - name: Display oracle_target_dbname 
+    debug: 
+      msg: "oracle_target_dbname = '{{ oracle_target_dbname }}'"    
+    when: oracle_target_dbname is defined
+
+# Discover source OCI-C DBCS 
+- name: Discover source OCI-C DBCS 
+  hosts: source[0] 
+  roles:
+    - source_discovery_role 
+
+# Discover target OCI DBSystem 
+- name: Discover target OCI DBSystem
+  hosts: target[0] 
+  roles:
+    - target_discovery_role 
+
+- name: Save setup.json file from template
+  hosts: localhost
+  tasks:
+
+  # Save  setup.json_discovery_XXXXXXXXXXXXXXX file
+  - name: Save setup.json_discovery_XXXXXXXXXXXXXXX file
+    copy: 
+      content: "{{ lookup('template', '../templates/setup.json_template.j2') }}" 
+      dest: "./setup.json_discovery_{{ansible_date_time.iso8601_basic_short}}"
+
+  # Content of setup.json_discovery_XXXXXXXXXXXXXXX file
+  - name: Content of setup.json_discovery_XXXXXXXXXXXXXXX file
+    debug: 
+      msg: "{{ lookup('template', '../templates/setup.json_template.j2') }}" 
+        

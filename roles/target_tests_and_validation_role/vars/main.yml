@@ -1,0 +1,5 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+target_exacs_hostname_index: "{{ groups['target'].index(inventory_hostname) }}"
+target_exacs_oracle_instance_index: "{{ ( target_exacs_hostname_index | int ) + 1 }}"

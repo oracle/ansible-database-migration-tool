@@ -1,0 +1,131 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# TDE wallet download from OSS
+#   
+
+# Create TDE directory on target (non ExaCS)
+- name: Create TDE directory on target (non ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  file:
+    path: "{{ oracle_target_wallet_dir }}/{{ oracle_target_database_unique_name }}" 
+    state: directory
+    owner: "{{ oracle_user }}"
+  when: (convert_to_ExaCS == 'False') and (skip_tde_download_stay_with_current_tde == 'False')
+
+# Create TDE directory on target (ExaCS)
+- name: Create TDE directory on target (ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  file:
+    path: "{{ oracle_target_wallet_dir }}" 
+    state: directory
+    owner: "{{ oracle_user }}"
+  when: (convert_to_ExaCS == 'True') and (skip_tde_download_stay_with_current_tde == 'False')
+
+# Download TDE file from OSS (non ExaCS)
+- name: Download TDE file from OSS (non ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  command: 'curl -v -X GET -u "{{ oci_user }}:{{ oci_authtoken_pass }}" {{ oci_swiftobjectstorage_url }}/{{ oci_oss_container }}/{{ oracle_source_database_sid }}_tde.tgz --output {{ oracle_target_wallet_dir }}/{{ oracle_target_database_unique_name }}/{{ oracle_source_database_sid }}_tde.tgz'
+  when: (convert_to_ExaCS == 'False') and (skip_tde_download_stay_with_current_tde == 'False')
+
+# Unpack the source wallet on target TDE location (non ExaCS)
+- name: Unpack the source wallet on target TDE location (non ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  unarchive:
+    src: "{{ oracle_target_wallet_dir }}/{{ oracle_target_database_unique_name }}/{{ oracle_source_database_sid }}_tde.tgz"
+    dest: "{{ oracle_target_wallet_dir }}/{{ oracle_target_database_unique_name }}"
+    remote_src: yes
+  when: (convert_to_ExaCS == 'False') and (skip_tde_download_stay_with_current_tde == 'False') and (use_unarchive_ansible_module == 'True')
+
+# Unpack the source wallet on target TDE location (ExaCS, gunzip)
+- name: Unpack the source wallet on target TDE location (ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  shell: "gunzip -c {{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tgz > {{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tar"
+  when: (convert_to_ExaCS == 'False') and (skip_tde_download_stay_with_current_tde == 'False') and (use_unarchive_ansible_module == 'False')
+
+# Untar the source wallet on target TDE location (ExaCS, tar)
+- name: Untar the source wallet on target TDE location (ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  shell: "tar -C {{ oracle_target_wallet_dir }} -xvf {{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tar"
+  when: (convert_to_ExaCS == 'False') and (skip_tde_download_stay_with_current_tde == 'False') and (use_unarchive_ansible_module == 'False')
+
+# Download TDE file from OSS (ExaCS)
+- name: Download TDE file from OSS (ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  command: 'curl -v -X GET -u "{{ oci_user }}:{{ oci_authtoken_pass }}" {{ oci_swiftobjectstorage_url }}/{{ oci_oss_container }}/{{ oracle_source_database_sid }}_tde.tgz --output {{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tgz'
+  when: (convert_to_ExaCS == 'True') and (skip_tde_download_stay_with_current_tde == 'False')
+
+# Unpack the source wallet on target TDE location (ExaCS)
+- name: Unpack the source wallet on target TDE location (ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  unarchive:
+    src: "{{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tgz"
+    dest: "{{ oracle_target_wallet_dir }}"
+    remote_src: yes
+  when: (convert_to_ExaCS == 'True') and (skip_tde_download_stay_with_current_tde == 'False') and (use_unarchive_ansible_module == 'True')
+
+# Unpack the source wallet on target TDE location (ExaCS, gunzip)
+- name: Unpack the source wallet on target TDE location (ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  shell: "gunzip -c {{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tgz > {{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tar"
+  when: (convert_to_ExaCS == 'True') and (skip_tde_download_stay_with_current_tde == 'False')  and (use_unarchive_ansible_module == 'False')
+
+# Untar the source wallet on target TDE location (ExaCS, tar)
+- name: Untar the source wallet on target TDE location (ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  shell: "tar -C {{ oracle_target_wallet_dir }} -xvf {{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tar"
+  when: (convert_to_ExaCS == 'True') and (skip_tde_download_stay_with_current_tde == 'False')  and (use_unarchive_ansible_module == 'False')
+
+# Upload sqlnet.ora file template (non ExaCS)
+- name: Upload sqlnet.ora file template (non ExaCS)
+  become: yes
+  become_method: sudo  
+  template:
+    src: "../templates/sqlnet.ora.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/sqlnet.ora"
+    owner: "{{ oracle_user }}"
+  when: (convert_to_ExaCS == 'False')    
+
+# Create TNS directory for sqlnet.ora on target (ExaCS)
+- name: Create TNS directory for sqlnet.ora on target (ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  file:
+    path: "{{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}/" 
+    state: directory
+    owner: "{{ oracle_user }}"
+  when: (convert_to_ExaCS == 'True')
+
+# Upload sqlnet.ora file template (ExaCS)
+- name: Upload sqlnet.ora file template (ExaCS)
+  become: yes
+  become_method: sudo  
+  template:
+    src: "../templates/sqlnet_exacs.ora.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}/sqlnet.ora"
+    owner: "{{ oracle_user }}"
+  when: (convert_to_ExaCS == 'True')    
+   
+  
+  

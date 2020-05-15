@@ -1,0 +1,92 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Verify plug compatibility for non-CDB to be plugged as PDB to CDB on target
+#  
+
+# ALTER PLUGGABLE DATABASE {{ plug_as_pdb }} CLOSE;
+- name: ALTER PLUGGABLE DATABASE {{ plug_as_pdb }} CLOSE; 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "ALTER PLUGGABLE DATABASE {{ plug_as_pdb }} CLOSE;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput1 
+
+# DROP PLUGGABLE DATABASE {{ plug_as_pdb }} INCLUDING DATAFILES;
+- name: DROP PLUGGABLE DATABASE {{ plug_as_pdb }} INCLUDING DATAFILES; 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "DROP PLUGGABLE DATABASE {{ plug_as_pdb }} INCLUDING DATAFILES;"
+    ignore_ORA_errors: True
+    output_as_array: True     
+  register: sqlplusoutput2 
+
+# Create PDB with CREATE PLUGGABLE DATABASE {{ plug_as_pdb }} USING (manifest file) COPY ... on target
+- name: Create PDB with CREATE PLUGGABLE DATABASE {{ plug_as_pdb }} USING (manifest file) COPY ... on target
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "CREATE PLUGGABLE DATABASE {{ plug_as_pdb }} USING '/tmp/{{ oracle_source_database_sid }}_manifest_file.xml' COPY
+ FILE_NAME_CONVERT = ('{{ grid_target_data_dg }}/{{ oracle_source_database_sid }}', '{{ grid_target_data_dg }}');"
+    ignore_ORA_errors: True
+    output_as_array: True
+  async: "{{ ansible_async_backup_source_timeout }}"
+  poll: 30
+  register: sqlplusoutput2
+
+# Run noncdb_to_pdb.sql for plugged in PDB ({{ plug_as_pdb }}) on target 
+- name: Run noncdb_to_pdb.sql for plugged in PDB ({{ plug_as_pdb }}) on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    pdb_service: "{{ plug_as_pdb }}"
+    set_container: True
+    sql_statement: "@{{ oracle_target_ohome_dir }}/rdbms/admin/noncdb_to_pdb.sql"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  async: "{{ ansible_async_backup_source_timeout }}" 
+  poll: 30  
+  register: sqlplusoutput3
+
+# Open new PDB ({{ plug_as_pdb }}) on target 
+- name: Open new PDB ({{ plug_as_pdb }}) on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    pdb_service: "{{ plug_as_pdb }}"
+    set_container: True
+    sql_statement: "alter pluggable database open;"
+    ignore_ORA_errors: True
+    output_as_array: True     
+  register: sqlplusoutput4
+
+# Show status of the PDBs on target 
+- name: Show status of the PDBs on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "SELECT name, open_mode FROM v$pdbs;"
+    ignore_ORA_errors: True
+    output_as_array: True     
+  register: sqlplusoutput5

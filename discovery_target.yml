@@ -1,0 +1,9 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+
+# Discover target OCI DBSystem 
+- name: Discover target OCI DBSystem
+  hosts: target[0] 
+  roles:
+    - target_discovery_role 

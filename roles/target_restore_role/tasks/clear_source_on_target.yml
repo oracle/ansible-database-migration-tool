@@ -1,0 +1,284 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Clear source on target 
+# 
+
+# Shutdown source on target
+- name: Shutdown source on target
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    as_sysdba: True
+    ignore_ORA_errors: True
+    sql_statement: "shutdown immediate;"
+
+# Shutdown source on target (source RAC)
+- name: Shutdown source on target (source RAC)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}1"
+    as_sysdba: True
+    ignore_ORA_errors: True
+    sql_statement: "shutdown immediate;"  
+  when: ( oracle_source_RAC == 'True' )    
+
+# Stop database on target (SRVCTL 11g, oracle_target_database_unique_name)
+- name: Stop database on target (SRVCTL 11g, oracle_target_database_unique_name)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "stop database"
+    syntax_11g: True
+  register: srvctloutput4 
+  when: oracle_source_version == '11.2.0.4'
+
+# Stop database on target (SRVCTL 12c+, oracle_target_database_unique_name)
+- name: Stop database on target (SRVCTL 12c+, oracle_target_database_unique_name)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "stop database"
+  register: srvctloutput4 
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Stop database on target (SRVCTL 11g, oracle_source_database_unique_name)
+- name: Stop database on target (SRVCTL 11g, oracle_source_database_unique_name)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_source_database_unique_name }}"
+    srvctl_command: "stop database"
+    syntax_11g: True
+  register: srvctloutput4 
+  when: oracle_source_version == '11.2.0.4'
+
+# Stop database on target (SRVCTL 12c+, oracle_source_database_unique_name)
+- name: Stop database on target (SRVCTL 12c+, oracle_source_database_unique_name)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_source_database_unique_name }}"
+    srvctl_command: "stop database"
+  register: srvctloutput4 
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Remove database on target (SRVCTL 11g, oracle_target_database_unique_name)
+- name: Remove database on target (SRVCTL 11g, oracle_target_database_unique_name)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "remove database"
+    no_prompt: True
+    syntax_11g: True
+  register: srvctloutput4 
+  when: oracle_source_version == '11.2.0.4'
+
+# Remove database on target (SRVCTL 12c+, oracle_target_database_unique_name)
+- name: Remove database on target (SRVCTL 12c+, oracle_target_database_unique_name)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "remove database"
+    no_prompt: True
+  register: srvctloutput4 
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Remove database on target (SRVCTL 11g, oracle_source_database_unique_name)
+- name: Remove database on target (SRVCTL 11g, oracle_source_database_unique_name)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_source_database_unique_name }}"
+    srvctl_command: "remove database"
+    no_prompt: True
+    syntax_11g: True
+  register: srvctloutput4 
+  when: oracle_source_version == '11.2.0.4'
+
+# Remove database on target (SRVCTL 12c+, oracle_source_database_unique_name)
+- name: Remove database on target (SRVCTL 12c+, oracle_source_database_unique_name)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_source_database_unique_name }}"
+    srvctl_command: "remove database"
+    no_prompt: True
+  register: srvctloutput4 
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Clear out +DATA with source data on target (oracle_source_database_unique_name)
+- name: Clear out +DATA with source data on target (oracle_source_database_unique_name)
+  become: yes
+  become_method: sudo
+  become_user: "{{ grid_user }}"
+  oracle_asmcmd_module:
+    oracle_home: "{{ grid_target_ohome_dir }}"
+    oracle_sid: "{{ grid_oracle_database_sid }}"
+    asmcmd_script: 'rm -rf {{ grid_target_data_dg }}/{{ oracle_source_database_sid }}/*'
+
+# Clear out +RECO with source data on target (oracle_source_database_unique_name)
+- name: Clear out +RECO with source data on target (oracle_source_database_unique_name)
+  become: yes
+  become_method: sudo
+  become_user: "{{ grid_user }}"
+  oracle_asmcmd_module:
+    oracle_home: "{{ grid_target_ohome_dir }}"
+    oracle_sid: "{{ grid_oracle_database_sid }}"
+    asmcmd_script: 'rm -rf {{ grid_target_reco_dg }}/{{ oracle_source_database_sid }}/*'  
+
+# Clear out +DATA with source data on target (oracle_target_database_unique_name)
+- name: Clear out +DATA with source data on target (oracle_target_database_unique_name)
+  become: yes
+  become_method: sudo
+  become_user: "{{ grid_user }}"
+  oracle_asmcmd_module:
+    oracle_home: "{{ grid_target_ohome_dir }}"
+    oracle_sid: "{{ grid_oracle_database_sid }}"
+    asmcmd_script: 'rm -rf {{ grid_target_data_dg }}/{{ oracle_target_database_unique_name }}/*'
+
+# Clear out +RECO with source data on target (oracle_target_database_unique_name)
+- name: Clear out +RECO with source data on target (oracle_target_database_unique_name)
+  become: yes
+  become_method: sudo
+  become_user: "{{ grid_user }}"
+  oracle_asmcmd_module:
+    oracle_home: "{{ grid_target_ohome_dir }}"
+    oracle_sid: "{{ grid_oracle_database_sid }}"
+    asmcmd_script: 'rm -rf {{ grid_target_reco_dg }}/{{ oracle_target_database_unique_name }}/*'  
+
+# Clean pfile on target for source db
+- name: Clean pfile on target for source db
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}.ora"
+
+# Clean /tmp/pfile on target for source db
+- name: Clean /tmp/pfile on target for source db
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "/tmp/init{{ oracle_source_database_sid }}.ora"
+
+# Clean pfile on target for source db (source RAC)
+- name: Clean pfile on target for source db (source RAC)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/init{{ oracle_source_database_sid }}1.ora"
+  when: oracle_source_RAC
+
+# Clean spfile on target for source db
+- name: Clean spfile on target for source db
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/spfile{{ oracle_source_database_sid }}.ora" 
+
+# Clean spfile on target for source db (source RAC)
+- name: Clean spfile on target for source db (source RAC)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/spfile{{ oracle_source_database_sid }}1.ora" 
+  when: oracle_source_RAC
+
+# Clean spfile backup on target for source db
+- name: Clean spfile backup on target for source db
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/spfile{{ oracle_source_database_sid }}.ora.bck"  
+
+# Clean sqlnet.ora on target for source db
+- name: Clean sqlnet.ora on target for source db
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/network/admin/sqlnet.ora"   
+
+# Clean tnsnames.ora on target for source db
+- name: Clean tnsnames.ora on target for source db
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/network/admin/tnsnames.ora"  
+
+# Clean TDE wallet directory content (oracle_source_database_sid, no ExaCS)
+- name: Clean TDE wallet directory content (oracle_source_database_sid, no ExaCS)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  shell: "rm -rf {{ oracle_target_wallet_dir }}//{{ oracle_source_database_sid }}/*" 
+  when: convert_to_ExaCS == 'False' and drop_tde_during_target_clean_up == True  
+
+# Clean TDE wallet directory content (oracle_target_database_unique_name, no ExaCS)
+- name: Clean TDE wallet directory content (oracle_target_database_unique_name, no ExaCS)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"             
+  shell: "rm -rf {{ oracle_target_wallet_dir }}//{{ oracle_target_database_unique_name }}/*" 
+  when: convert_to_ExaCS == 'False' and drop_tde_during_target_clean_up == True 
+
+# Clean TDE wallet directory content (ExaCS)
+- name: Clean TDE wallet directory content (ExaCS)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  shell: "rm -rf {{ oracle_target_wallet_dir }}/*" 
+  when: convert_to_ExaCS == 'True' and drop_tde_during_target_clean_up == True  
+
+# Clean orapw file on target for source db
+- name: Clean orapw file on target for source db
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ oracle_target_ohome_dir }}/dbs/orapw{{ oracle_source_database_sid }}" 
+    
+     
+  

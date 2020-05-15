@@ -1,0 +1,50 @@
+{
+"opc_installer_zip_src_location" : "</path/to/opc_installer.zip>",
+"oci_endpoint_url": "<OCI-C_or_OCI_OSS_endpoint>",
+"oci_tenancy": "<OCI_tenancy>",
+"oci_user": "<OCI-C_or_OCI_user>",
+"oci_authtoken_pass": "<OCI-C_or_OCI_authtoken_password>",
+"oci_oss_container": "<OCI-C_or_OCI_OSS_container_or_bucket>",
+
+"oracle_source_RAC": "False",
+"oracle_source_database_sid": "awsoradb",
+"oracle_source_ohome_dir": "/u01/app/oracle/product/11.2.0.4/db_1",
+"oracle_source_dbid": "2556999476",
+"oracle_source_wallet_dir": "/u01/app/oracle/product/11.2.0.4/db_1/admin/awsoradb/wallet",
+"oracle_source_database_unique_name": "awsoradb",
+"oracle_source_version": "11.2.0.4",
+"oracle_source_sysdba_password": "<sysdba_password>",
+
+"oracle_target_ohome_dir": "/u01/app/oracle/product/11.2.0.4/dbhome_1",
+"oracle_target_adump_dir": "/u01/app/oracle/admin/awsoradb_phx1g2/adump",
+"oracle_target_racnode1_adump_dir": "/u01/app/oracle/admin/awsoradb_phx1g2/adump",
+"oracle_target_racnode2_adump_dir": "/u01/app/oracle/admin/awsoradb_phx1g2/adump",
+"grid_target_ohome_dir": "/u01/app/18.0.0.0/grid",
+"oracle_target_database_unique_name": "awsoradb_phx1g2",
+"oracle_target_wallet_dir": "/opt/oracle/dcs/commonstore/wallets/tde",
+"grid_oracle_database_sid": "+ASM1",
+"grid_target_data_dg": "+DATA",
+"grid_target_reco_dg": "+RECO",
+
+"oracle_target_database_oci_endpoint_url": "<OCI_OSS_endpoint>",
+"oracle_target_database_oci_tenancy": "<OCI_tenancy>",
+"oracle_target_database_oci_user": "<OCI_user>",
+"oracle_target_database_oci_authtoken_pass": "<OCI_authtoken_password>",
+"oracle_target_database_oci_bucketname": "<OCI_OSS_bucket>",
+
+"prepare_rman_on_source": "True",
+"tde_upload_to_oss": "False",
+"backup_level0": "True",
+"backup_level1": "True",
+
+"clear_source_on_target": "True",
+"prepare_rman_on_target": "True",
+"tde_download_from_oss": "False",
+"restore_level0": "True",
+"restore_level1": "True",
+"open_resetlogs": "True",
+"register_in_OCI": "False",
+
+"convert_to_RAC": "True",
+"convert_to_ExaCS": "False"
+}

@@ -1,0 +1,345 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Enable TDE on target
+#
+
+# Upload sqlnet.ora file template (non ExaCS)
+- name: Upload sqlnet.ora file template (non ExaCS)
+  become: yes
+  become_method: sudo  
+  template:
+    src: "../templates/sqlnet.ora.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/sqlnet.ora"
+    owner: "{{ oracle_user }}"
+  when: (convert_to_ExaCS == 'False')
+
+# Upload sqlnet.ora file template (ExaCS)
+- name: Upload sqlnet.ora file template (ExaCS)
+  become: yes
+  become_method: sudo  
+  template:
+    src: "../templates/sqlnet_exacs.ora.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/sqlnet.ora"
+    owner: "{{ oracle_user }}"
+  when: (convert_to_ExaCS == 'True')  
+ 
+# Shutting down database (11.2.0.4)
+- name: Shutting down database (11.2.0.4)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "shutdown immediate;"
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '11.2.0.4')
+
+# Starting database (11.2.0.4)
+- name: Starting database (11.2.0.4)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "startup open;"
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '11.2.0.4')
+
+# Create wallet and master key (11.2.0.4)
+- name: Create wallet and master key (11.2.0.4)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "ALTER SYSTEM SET ENCRYPTION KEY IDENTIFIED BY {{ tde_password }};"
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '11.2.0.4')
+
+# Converting wallet to autologin (11.2.0.4, non ExaCS)
+- name: Converting wallet to autologin (11.2.0.4, non ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  shell: 
+    cmd: "{{ lookup('template', '../templates/orapki_create_wallet_11g.j2') }}"
+  when: (oracle_source_version == '11.2.0.4') and (convert_to_ExaCS == 'False')
+
+# Converting wallet to autologin (11.2.0.4, ExaCS)
+- name: Converting wallet to autologin (11.2.0.4, ExaCS)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  shell: 
+    cmd: "{{ lookup('template', '../templates/orapki_create_wallet_11g_exacs.j2') }}"
+  when: (oracle_source_version == '11.2.0.4') and (convert_to_ExaCS == 'True')
+
+# Check wallet status (11.2.0.4)
+- name: Check wallet status (11.2.0.4)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "select * from v$encryption_wallet;"
+    ignore_ORA_errors: True
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '11.2.0.4')
+  
+# Showing wallet status (11.2.0.4)
+- name: Showing wallet status (11.2.0.4)
+  debug: 
+    msg: "{{ sqlplusoutput.sqlplus_message }}"
+  when: (oracle_source_version == '11.2.0.4')
+
+# Obtaining PDBs name (12.1+)
+- name: Obtaining PDBs name (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "select name from v$pdbs where con_id > 2;"
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Set PDBs list as fact (12.1+)
+- name: Set PDBs list as fact (12.1+)
+  set_fact:
+    pdbs_list: "{{ sqlplusoutput.sqlplus_message[0] }}"
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Opening PDBs before creating TDE keystores (12.1+)
+- name: Opening PDBs before creating TDE keystores (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "alter pluggable database {{ item }} open;"
+    ignore_ORA_errors: True
+    output_as_array: True
+  loop: "{{ pdbs_list }}"
+  loop_control:
+    index_var: pdbs_list_loop_idx1
+  register: sqlplusoutput
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Creating keystore (12.1+, non ExaCS)
+- name: Creating keystore (12.1+, non ExaCS)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT CREATE KEYSTORE '{{ oracle_target_wallet_dir }}/{{ oracle_target_database_unique_name }}' IDENTIFIED BY {{ tde_password }};"
+    output_as_array: True
+  register: sqlplusoutput
+  when: ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')) and (convert_to_ExaCS == 'False')
+
+# Creating keystore (12.1+, ExaCS)
+- name: Creating keystore (12.1+, ExaCS)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT CREATE KEYSTORE '{{ oracle_target_wallet_dir }}' IDENTIFIED BY {{ tde_password }};"
+    output_as_array: True
+  register: sqlplusoutput
+  when: ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')) and (convert_to_ExaCS == 'True')
+
+# Opening CDB$ROOT keystore (12.1+)
+- name: Opening CDB$ROOT keystore (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY {{ tde_password }};"
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Opening keystore on every PDB (12.1+)
+- name: Opening keystore on every PDB (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    set_container: True
+    pdb_service: "{{ item }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY {{ tde_password }};"
+    ignore_ORA_errors: True
+    output_as_array: True
+  loop: "{{ pdbs_list }}"
+  loop_control:
+    index_var: pdbs_list_loop_idx1
+  register: sqlplusoutput
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Setting Master Key (12.1+)
+- name: Setting Master Key (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY {{ tde_password }} WITH BACKUP;"
+    ignore_ORA_errors: True
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Setting Master Key for every PDB (12.1+)
+- name: Setting Master Key for every PDB (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    set_container: True
+    pdb_service: "{{ item }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT SET KEY IDENTIFIED BY {{ tde_password }} WITH BACKUP;"
+    ignore_ORA_errors: True
+    output_as_array: True
+  loop: "{{ pdbs_list }}"
+  loop_control:
+    index_var: pdbs_list_loop_idx1
+  register: sqlplusoutput
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')
+
+# Creating local AUTO-LOGIN Keystore (12.1+, no ExaCS)
+- name: Creating local AUTO-LOGIN Keystore (12.1+, no ExaCS)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT CREATE AUTO_LOGIN KEYSTORE FROM KEYSTORE '{{ oracle_target_wallet_dir }}/{{ oracle_target_database_unique_name }}' IDENTIFIED BY {{ tde_password }};"
+    output_as_array: True
+  register: sqlplusoutput
+  when: ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')) and (convert_to_ExaCS == 'False')
+
+# Creating local AUTO-LOGIN Keystore (12.1+, ExaCS)
+- name: Creating local AUTO-LOGIN Keystore (12.1+, ExaCS)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT CREATE AUTO_LOGIN KEYSTORE FROM KEYSTORE '{{ oracle_target_wallet_dir }}' IDENTIFIED BY {{ tde_password }};"
+    output_as_array: True
+  register: sqlplusoutput
+  when: ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0')) and (convert_to_ExaCS == 'True')
+
+# Closing password based keystore (12.1+)
+- name: Closing password based keystore (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE IDENTIFIED BY {{ tde_password }};"
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0') 
+
+# Check wallet status (18c+)
+- name: Check wallet status (18c+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "select CON_ID, WRL_PARAMETER, STATUS, WALLET_TYPE from v$encryption_wallet;"
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '18.0.0.0') 
+
+# Showing wallet status (18c+)
+- name: Showing wallet status (18c+)
+  debug: 
+    msg: "{{ sqlplusoutput.sqlplus_message }}"
+  when: (oracle_source_version == '18.0.0.0')
+
+# Check wallet status for CDB$ROOT (12.1 and 12.2)
+- name: Check wallet status for CDB$ROOT (12.1 and 12.2)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    sql_statement: "select CON_ID, WRL_PARAMETER, STATUS, WALLET_TYPE from v$encryption_wallet;"
+    output_as_array: True
+  register: sqlplusoutput
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') 
+
+# Showing wallet status for CDB$ROOT (12.1 and 12.2)
+- name: Showing wallet status for CDB$ROOT (12.1 and 12.2)
+  debug: 
+    msg: "{{ sqlplusoutput.sqlplus_message }}"
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') 
+  
+# Check wallet status for every PDB (12.1 and 12.2)
+- name: Check wallet status for every PDB (12.1 and 12.2)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    set_container: True
+    pdb_service: "{{ item }}"
+    sql_statement: "select CON_ID, WRL_PARAMETER, STATUS, WALLET_TYPE from v$encryption_wallet;"
+    ignore_ORA_errors: True
+    output_as_array: True
+  loop: "{{ pdbs_list }}"
+  loop_control:
+    index_var: pdbs_list_loop_idx1
+  register: sqlplusoutput
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') 
+  
+# Showing wallet status for every PDB (12.1 and 12.2)
+- name: Showing wallet status for every PDB (12.1 and 12.2)
+  debug: 
+    msg: "{{ sqlplusoutput.results }}"
+  when: (oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') 

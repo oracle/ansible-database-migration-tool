@@ -1,0 +1,822 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Open resetlogs and post migration clean 
+#  
+
+# Disabing block change tracking (to avoid ORA-19751) 
+- name: Disabing block change tracking (to avoid ORA-19751)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "alter database disable block change tracking;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput1  
+ 
+# Enabling block change tracking in +DATA (to avoid ORA-19751)
+- name: Enabling block change tracking in +DATA (to avoid ORA-19751)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "alter database enable block change tracking using file '{{ grid_target_data_dg }}';"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput2  
+
+# Setting inital empty RMAN channels fact table
+- name: Setting inital empty RMAN channels fact table
+  set_fact:
+    rman_channels: [] 
+     
+# Generating RMAN channels fact table 
+- name: Generating RMAN channels fact table   
+  set_fact:
+    rman_channels: "{{ rman_channels }} + ['c{{ item }}']" 
+  with_sequence: start=1 end={{ rman_channels_number }}  
+
+# Starting RMAN to do additional recovery
+- name: Starting RMAN to do additional recovery
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "{{ lookup('template', '../templates/rman_additional_recovery_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_additional_recovery_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30
+  register: rmanoutput1  
+
+# Starting RMAN to open database with resetlogs
+- name: Starting RMAN to open database with resetlogs
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "alter database open resetlogs;"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_logfile: "{{ rman_log_path }}/rman_alter_database_open_resetlogs_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  register: rmanoutput2   
+
+# Checking database open mode 
+- name: Checking database open mode 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "select name, open_mode from v$database;"
+    output_as_array: True    
+  register: sqlplusoutput2
+  when: oracle_source_version == '12.1.0.2'
+
+# Checking if database is CDB or non-CDB (12c+)
+- name: Checking if database is CDB or non-CDB (12c+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "SELECT CDB FROM V$DATABASE;"
+    output_as_array: True
+  register: sqlplusoutput3
+  when: oracle_source_version != '11.2.0.4'
+
+# Set fact for cdb_database (12c+)
+- name: Set fact for cdb_database (12c+)
+  set_fact:
+    cdb_database: "{{ sqlplusoutput3.sqlplus_message[0][0] }}"
+  when: oracle_source_version != '11.2.0.4'
+
+# Set fact for cdb_database (11g)
+- name: Set fact for cdb_database (11g)
+  set_fact:
+    cdb_database: "NO"
+  when: oracle_source_version == '11.2.0.4'
+
+# Obtaining TEMP file (11g or non-CDB 12c+)
+- name: Obtaining TEMP file (11g or non-CDB 12c+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "select name from v$tempfile;"
+    output_as_array: True
+  register: sqlplusoutput3
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Set fact for name of the temp file (11g or non-CDB 12c+)
+#- name: Set fact for name of the temp file (11g or non-CDB 12c+)
+#  set_fact:
+#    tempfile_11g: "{{ sqlplusoutput3.sqlplus_message[0][0] }}"
+#  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Clearing TEMP file (11g or non-CDB 12c+)
+#- name: Clearing TEMP file (11g or non-CDB 12c+)
+#  become: yes
+#  become_method: sudo
+#  become_user: "{{ oracle_user }}"
+#  oracle_sqlplus_module:
+#    oracle_home: "{{ oracle_target_ohome_dir }}"
+#    oracle_sid: "{{ oracle_source_database_sid }}"
+#    sql_statement: "ALTER DATABASE TEMPFILE '{{ tempfile_11g }}' DROP;"
+#    output_as_array: True
+#  register: sqlplusoutput4
+#  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Set fact for name of the temp file (11g or non-CDB 12c+)
+- name: Set fact for name of the temp file (11g or non-CDB 12c+)
+  set_fact:
+     tempfiles_11g: "{{ tempfiles_11g|default([]) + [ item ] }}"
+  with_items: "{{ sqlplusoutput3.sqlplus_message[0] }}"
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Clearing TEMP file (11g or non-CDB 12c+)
+- name: Clearing TEMP file (11g or non-CDB 12c+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "ALTER DATABASE TEMPFILE '{{ item }}' DROP;"
+    output_as_array: True
+  loop: "{{ tempfiles_11g }}"
+  register: sqlplusoutput4
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Finding default TEMP tablespace (11g or non-CDB 12c+)
+- name: Finding default TEMP tablespace (11g or non-CDB 12c+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "SELECT PROPERTY_VALUE FROM DATABASE_PROPERTIES WHERE PROPERTY_NAME = 'DEFAULT_TEMP_TABLESPACE';"
+  register: sqlplusoutput5
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Setting default TEMP tablespace fact (11g or non-CDB 12c+)
+- name: Setting default TEMP tablespace fact (11g or non-CDB 12c+)
+  set_fact:
+    default_temp_tbs_11g: "{{ sqlplusoutput5.sqlplus_message[0][0] }}"
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Adding new TEMP file (11g or non-CDB 12c+)
+- name: Adding new TEMP (11g or non-CDB 12c+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "ALTER TABLESPACE {{ default_temp_tbs_11g }} ADD TEMPFILE;"
+    output_as_array: True
+  loop: "{{ tempfiles_11g }}"
+  register: sqlplusoutput6
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Configuring RMAN snapshot controlfile name to +RECO (12.2)
+- name: Configuring RMAN snapshot controlfile name to +RECO (12.2)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "CONFIGURE SNAPSHOT CONTROLFILE NAME TO '{{ grid_target_reco_dg }}/{{ oracle_target_database_unique_name }}/snapcf_{{ oracle_source_database_unique_name }}.f';"
+    rman_logfile: "{{ rman_log_path }}/rman_configure_snapshot_controlfile_name_to_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30  
+  register: rmanoutput3   
+  when: (oracle_source_version == '12.2.0.1') 
+
+# Extract TEMP tablespace name for root container (12.1+)
+- name: Extract TEMP tablespace name for root container (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "select TABLESPACE_NAME from dba_tablespaces where CONTENTS = 'TEMPORARY';"
+    output_as_array: True
+  register: sqlplusoutput7
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Set fact TEMP tablespace name for root container (12.1+)
+- name: Set fact TEMP tablespace name for root container (12.1+)
+  set_fact:
+    root_temp_tablespace_name: "{{ sqlplusoutput7.sqlplus_message[0][0] }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Check if TEMP tablespace for root container is BIGFILE (12.1+)
+- name: Check if TEMP tablespace for root container is BIGFILE (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "select BIGFILE from dba_tablespaces where TABLESPACE_NAME='{{ root_temp_tablespace_name }}';"
+    output_as_array: True
+  register: sqlplusoutput7
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Set fact if TEMP tablespace for root container is BIGFILE (tempfile_bigfile=YES or NO, 12.1+)
+- name: Set fact if TEMP tablespace for root container is BIGFILE (tempfile_bigfile=YES or NO, 12.1+)
+  set_fact:
+    tempfile_bigfile: "{{ sqlplusoutput7.sqlplus_message[0][0] }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Set fact if TEMP tablespace for root container is BIGFILE (tempfile_bigfile=NO, 11.2)
+- name: Set fact if TEMP tablespace for root container is BIGFILE (tempfile_bigfile=NO, 11.2)
+  set_fact:
+    tempfile_bigfile: "NO"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Obtaining TEMP file for root container (12.1+)
+- name: Obtaining TEMP file for root container (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "select name from v$tempfile where con_id=1;"
+    output_as_array: True
+  register: sqlplusoutput7
+  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Set fact for name of the temp file for root container (12.1+)
+- name: Set fact for name of the temp file for root container (12.1+)
+  set_fact:
+    tempfile_root_container: "{{ sqlplusoutput7.sqlplus_message[0][0] }}"
+  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Adding new TEMP file for root container (12.1+)
+- name: Adding new TEMP file for root container (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "ALTER TABLESPACE {{ temp_tablespace_name }} ADD TEMPFILE;"
+    output_as_array: True
+  register: sqlplusoutput8
+  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+   
+# Clearing TEMP file for root container (12.1+)
+- name: Clearing TEMP file for root container (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "ALTER DATABASE TEMPFILE '{{ tempfile_root_container }}' DROP;"
+    ignore_ORA_errors: True
+    output_as_array: True
+  register: sqlplusoutput9
+  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))  
+
+# Obtaining PDB$SEED Tempfile (12.1+)
+- name: Obtaining PDB$SEED TEMPfile (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "select name from v$tempfile where con_id=2;"
+    output_as_array: True
+  register: sqlplusoutput10
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Populate PDB$SEED TEMPfile (12.1+)
+- name: Populate PDB$SEED TEMPfile (12.1+)
+  set_fact:
+    pdbseed_tempfile: "{{ sqlplusoutput10.sqlplus_message[0][0] }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Extract TEMP tablespace name for PDB$SEED (12.1+)
+- name: Extract TEMP tablespace name for PDB$SEED (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    pdb_service: "PDB$SEED"
+    set_container: True
+    sql_statement: "select TABLESPACE_NAME from dba_tablespaces where CONTENTS = 'TEMPORARY';"
+    output_as_array: True
+  register: sqlplusoutput7
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Set fact TEMP tablespace name for PDB$SEED (12.1+)
+- name: Set fact TEMP tablespace name for PDB$SEED (12.1+)
+  set_fact:
+    pdbseed_temp_tablespace_name: "{{ sqlplusoutput7.sqlplus_message[0][1] }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Dropping PDB$SEED Tempfile (12.1+)
+- name: Dropping PDB$SEED TEMPfile (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    pdb_service: "PDB$SEED"
+    set_container: True
+    sql_statement: "alter database tempfile '{{ pdbseed_tempfile }}' drop;"
+    output_as_array: True
+  register: sqlplusoutput11
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Shutting down PDB$SEED with _oracle_script set to TRUE (12.1+)
+- name: Shutting down PDB$SEED with _oracle_script set to TRUE (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    pdb_service: "PDB$SEED"
+    set_container: True
+    sql_statement: "alter pluggable database pdb$seed close;"
+    hidden_oracle_script: True
+    output_as_array: True
+  register: sqlplusoutput12
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Startup PDB$SEED with _oracle_script set to TRUE (12.1+)
+- name: Startup PDB$SEED with _oracle_script set to TRUE (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    pdb_service: "PDB$SEED"
+    set_container: True
+    sql_statement: "alter pluggable database pdb$seed open read write;"
+    hidden_oracle_script: True
+    output_as_array: True
+  register: sqlplusoutput13
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Add new tempfile to PDB$SEED with _oracle_script set to TRUE (12.1+)
+- name: Add new tempfile to PDB$SEED with _oracle_script set to TRUE (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    pdb_service: "PDB$SEED"
+    set_container: True
+    sql_statement: "alter tablespace {{ pdbseed_temp_tablespace_name }} add tempfile '{{ grid_target_data_dg }}';"
+    hidden_oracle_script: True
+    output_as_array: True
+  register: sqlplusoutput14
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Shutdown immediate database after adding temp file to PDB$SEED (12.1+)
+- name: Shutdown immediate database after adding temp file to PDB$SEED (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "shutdown immediate;"
+    output_as_array: True
+  register: sqlplusoutput15
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Startup open database after adding temp file to PDB$SEED (12.1+)
+- name: Startup open database after adding temp file to PDB$SEED (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "startup open;"
+    output_as_array: True
+  register: sqlplusoutput16
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Obtaining PDBs name (12.1+)
+- name: Obtaining PDBs name (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "select name from v$pdbs where con_id > 2;"
+    output_as_array: True
+  register: sqlplusoutput17
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Set PDBs list as fact (12.1+)
+- name: Set PDBs list as fact (12.1+)
+  set_fact:
+    pdbs_list: "{{ sqlplusoutput17.sqlplus_message[0] }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Opening PDBs after resetlogs (12.1+)
+- name: Opening PDBs after resetlogs (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "alter pluggable database {{ item }} open;"
+    ignore_ORA_errors: True
+    output_as_array: True
+  loop: "{{ pdbs_list }}"
+  loop_control:
+    index_var: pdbs_list_loop_idx1
+  register: sqlplusoutput18
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Obtaining TEMPfiles for PDBs (12.1+)
+- name: Obtaining TEMPfiles for PDBs (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "select a.name||','||b.name||','||c.name from v$pdbs a, v$tempfile b, v$tablespace c where a.con_id=b.con_id and a.con_id=c.con_id and b.ts#=c.ts# and a.con_id > 2;"
+#    sql_statement: "select a.name||','||b.name from v$pdbs a, v$tempfile b where a.con_id=b.con_id and a.con_id > 2;"
+    output_as_array: True
+  register: sqlplusoutput19
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Populate PDB's TEMPfile list (12.1+)
+- name: Populate PDB's TEMPfile list (12.1+)
+  set_fact:
+     pdb_tempfiles: "{{ pdb_tempfiles|default([]) + [ {'PDB': item.split(',')[0], 'tempfile': item.split(',')[1], 'tablespace': item.split(',')[2]} ] }}"
+  with_items: "{{ sqlplusoutput19.sqlplus_message[0] }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Clearing TEMPfiles for PDBs (12.1+)
+- name: Clearing TEMPfiles for PDBs (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    pdb_service: "{{ item.PDB }}"
+    set_container: True
+    sql_statement: "ALTER DATABASE TEMPFILE '{{ item.tempfile }}' DROP;"
+    ignore_ORA_errors: True
+    output_as_array: True
+  loop: "{{ pdb_tempfiles }}"
+  loop_control:
+    index_var: pdb_tempfiles_loop_idx1
+  register: sqlplusoutput20
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Adding new TEMP file for PDBs (12.1+)
+- name: Adding new TEMP file for PDBs (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    pdb_service: "{{ item.PDB }}"
+    set_container: True
+    sql_statement: "ALTER TABLESPACE {{ item.tablespace }} ADD TEMPFILE;"
+    output_as_array: True
+  loop: "{{ pdb_tempfiles }}"
+  loop_control:
+    index_var: pdb_tempfiles_loop_idx1
+  register: sqlplusoutput21
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Add source entry to /etc/oratab on target
+- name: Add source entry to /etc/oratab on target
+  become: yes
+  become_method: sudo
+  lineinfile:
+    path: "/etc/oratab"
+    regexp: "^{{ oracle_target_database_unique_name }}[:]"
+    line: "{{ oracle_target_database_unique_name }}:{{ oracle_target_ohome_dir }}:N"
+    owner: "{{ oracle_user }}"
+
+# Obtaining PDBs name for tnsnames.ora (12.1+)
+- name: Obtaining PDBs name for tnsnames.ora (12.1+) 
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "select name from v$pdbs where name NOT LIKE 'PDB%SEED';"
+    output_as_array: True
+  register: sqlplusoutput22
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Set PDBs list (without PDB$SEED) as fact for tnsnames.ora (12.1+)
+- name: Set PDBs list (without PDB$SEED) as fact for tnsnames.ora (12.1+)
+  set_fact:
+    pdbs_list_without_pdbseed: "{{ sqlplusoutput22.sqlplus_message[0] }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Get target DNS FQDN (for tnsnames.ora)
+- name: Get target DNS FQDN (for tnsnames.ora)
+  become: yes
+  become_method: sudo
+  command: "hostname -f"
+  register: target_fqdn_output
+
+# Set target_fqdn fact (for tnsnames.ora)
+- name: Set target_fqdn fact (for tnsnames.ora)
+  set_fact:
+    target_fqdn: "{{ target_fqdn_output.stdout }}" 
+
+# Get target DNS domain (for tnsnames.ora)
+- name: Get target DNS domain (for tnsnames.ora)
+  become: yes
+  become_method: sudo
+  command: "dnsdomainname"
+  register: dns_domian_output
+
+# Set target_dns_domain fact (for tnsnames.ora)
+- name: Set target_dns_domain fact (for tnsnames.ora)
+  set_fact:
+    target_dns_domain: "{{ dns_domian_output.stdout }}"
+
+# Upload tnsnames.ora file template for source db on target (multitenant with PDBs, 12.1+)
+- name: Upload tnsnames.ora file template for source db on target (multitenant with PDBs, 12.1+)
+  become: yes
+  become_method: sudo
+  template:
+    src: "../templates/tnsnames.ora_multitenant.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/tnsnames.ora"
+    owner: "{{ oracle_user }}"
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Upload tnsnames.ora file template for source db on target (no multitenant without PDBs, 11g)
+- name: Upload tnsnames.ora file template for source db on target (no multitenant without PDBs, 11g)
+  become: yes
+  become_method: sudo
+  template:
+    src: "../templates/tnsnames.ora_11g.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/tnsnames.ora"
+    owner: "{{ oracle_user }}"
+  when: (oracle_source_version == '11.2.0.4') or (cdb_database == False)
+
+# Create orapwd file for source db on target
+- name: Create orapwd file for source db on target
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_orapwd_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    password: "{{ oracle_source_sysdba_password }}"
+
+# Adding source database on the target to CRS registry (SRVCTL 12c+)
+- name: Adding source database on the target to CRS registry (SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    add_oh_to_command: True
+    srvctl_command: "add database"
+  register: srvctloutput1
+  when: (convert_to_RAC == 'False') and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Adding source database on the target to CRS registry (SRVCTL 11g)
+- name: Adding source database on the target to CRS registry (SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_unqname: "{{ oracle_source_database_sid }}"
+    add_oh_to_command: True
+    srvctl_command: "add database"
+    syntax_11g: True
+  register: srvctloutput2
+  when: (convert_to_RAC == 'False') and (oracle_source_version == '11.2.0.4')
+
+# Seting ORACLE_UNQNAME source database on the target (SRVCTL 12c+)
+- name: Seting ORACLE_UNQNAME source database on the target (SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    os_env: "ORACLE_UNQNAME={{ oracle_target_database_unique_name }}"
+    srvctl_command: "setenv database"
+  register: srvctloutput3
+  when: (convert_to_RAC == 'False') and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1')  or (oracle_source_version == '18.0.0.0'))
+
+# Seting ORACLE_UNQNAME source database on the target (SRVCTL 11g)
+- name: Seting ORACLE_UNQNAME source database on the target (SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_source_database_sid }}"
+    os_env: "ORACLE_UNQNAME={{  oracle_target_database_unique_name }}"
+    oracle_unqname: "{{ oracle_source_database_sid }}"
+    srvctl_command: "setenv database"
+    syntax_11g: True
+  register: srvctloutput4
+  when: (convert_to_RAC == 'False') and (oracle_source_version == '11.2.0.4')
+
+# Adding source single instance on the target to CRS registry (SRVCTL 12c+)
+- name: Adding source single instance on the target to CRS registry (SRVCTL 12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}"
+    oracle_node: "{{ ansible_hostname }}"
+    srvctl_command: "add instance"
+  register: srvctloutput5 
+  when: (convert_to_RAC == 'False') and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Adding source single instance on the target to CRS registry (SRVCTL 11g)
+- name: Adding source single instance on the target to CRS registry (SRVCTL 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_source_database_sid }}"
+    oracle_node: "{{ ansible_hostname }}"
+    srvctl_command: "add instance"
+    syntax_11g: True
+  register: srvctloutput6 
+  when: (convert_to_RAC == 'False') and (oracle_source_version == '11.2.0.4')
+
+# Startup source single instance on target (SRVCTL 12c+)
+- name: Startup source instance on target (SRVCTL 12c+) 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}"
+    srvctl_command: "start instance"
+  register: srvctloutput7 
+  when: (convert_to_RAC == 'False') and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Showing source single instance on target (SRVCTL 12c+)
+- name: Showing source single instance on target (SRVCTL 12c+)
+  debug: 
+    msg: "{{ srvctloutput7.srvctl_output }}"
+  when: (convert_to_RAC == 'False') and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Startup source single instance on target (SRVCTL 11g)
+- name: Startup source single instance on target (SRVCTL 11g) 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    oracle_instance: "{{ oracle_source_database_sid }}"
+    oracle_unqname: "{{ oracle_source_database_sid }}"
+    srvctl_command: "start instance"
+    syntax_11g: True
+  register: srvctloutput8 
+  when: (convert_to_RAC == 'False') and (oracle_source_version == '11.2.0.4')
+
+# Showing source single instance on target (SRVCTL 11g)
+- name: Showing source single instance on target (SRVCTL 11g)
+  debug: 
+    msg: "{{ srvctloutput8.srvctl_output }}"
+  when: (convert_to_RAC == 'False') and (oracle_source_version == '11.2.0.4')
+
+# Shutdown immediate database before datapatch
+- name: Shutdown immediate database before datapatch
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "shutdown immediate;"
+    output_as_array: True
+  register: sqlplusoutput15
+  when: (datapatch_on_target == 'True')
+
+# Startup upgrade database before datapatch
+- name: Startup upgrade database before datapatch
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "startup upgrade;"
+    output_as_array: True
+  register: sqlplusoutput15
+  when: (datapatch_on_target == 'True')
+
+# Running datapatch
+- name: Running datapatch
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  shell: "{{ oracle_target_ohome_dir }}/OPatch/datapatch"
+  environment:
+    ORACLE_HOME: "{{ oracle_target_ohome_dir }}"
+    ORACLE_SID: "{{ oracle_source_database_sid }}"
+    PATH: "/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/sbin:{{ oracle_target_ohome_dir }}/bin"
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30 
+  when: (datapatch_on_target == 'True')
+
+# Shutdown immediate database after datapatch
+- name: Shutdown immediate database after datapatch
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "shutdown immediate;"
+    output_as_array: True
+  register: sqlplusoutput15
+  when: (datapatch_on_target == 'True')
+
+# Startup upgrade database after datapatch
+- name: Startup upgrade database after datapatch
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "startup open;"
+    output_as_array: True
+  register: sqlplusoutput15
+  when: (datapatch_on_target == 'True')
+
+# Starting all of the PDBs with ALTER PLUGGABLE DATABASE ALL OPEN (12c+)
+- name: Starting all of the PDBs with ALTER PLUGGABLE DATABASE ALL OPEN (12c+)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "ALTER PLUGGABLE DATABASE ALL OPEN;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput23
+  when: (cdb_database == True) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))

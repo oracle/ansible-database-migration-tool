@@ -1,0 +1,233 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Discover target system
+#
+
+# Discover target database and GI
+- name: Discover target database and GI
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}" 
+  oracle_rdbms_discovery_module:
+    etc_oratab_usage: False
+    oracle_dbname: "{{ oracle_target_dbname }}"
+  register: target_db_discovery_results
+
+# Set facts related to target database and GI
+- name: Set facts related to target database and GI
+  set_fact:
+    oracle_target_database_unique_name: "{{ target_db_discovery_results.oracle_db_unique_name }}" 
+    oracle_target_ohome_dir: "{{ target_db_discovery_results.oracle_home }}"
+    grid_target_ohome_dir: "{{ target_db_discovery_results.oracle_gi_home }}"
+
+# Obtaining status of target database on the target (taken from to CRS registry, 12c+)
+- name: Obtaining status of target database on the target (taken from to CRS registry, 12c+ )
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "status database"
+  register: srvctloutput1 
+  when: oracle_target_ohome_dir.find("11.2.0") == -1 
+
+# Set srvctloutput fact (12c+)
+- name: Set oracle_target_database_sid fact (12c+)
+  set_fact:
+    oracle_target_database_sid: "{{ srvctloutput1.srvctl_output[0] | regex_replace('^Instance (?P<instance>.+) is running on node (?P<node>.+)$', '\\g<instance>') }}"  
+  when: oracle_target_ohome_dir.find("11.2.0") == -1
+
+# Obtaining status of target database on the target (taken from to CRS registry, 11g)
+- name: Obtaining status of target database on the target (taken from to CRS registry, 11g)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_database: "{{ oracle_target_database_unique_name }}"
+    srvctl_command: "status database"
+    syntax_11g: True
+  register: srvctloutput1 
+  when: oracle_target_ohome_dir.find("11.2.0") != -1 
+
+# Set srvctloutput fact (11g)
+- name: Set oracle_target_database_sid fact (11g)
+  set_fact:
+    oracle_target_database_sid: "{{ srvctloutput1.srvctl_output[0] | regex_replace('^Instance (?P<instance>.+) is running on node (?P<node>.+)$', '\\g<instance>') }}"  
+  when: oracle_target_ohome_dir.find("11.2.0") != -1  
+
+# Discover target database wallet 
+- name: Discover target database wallet 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_target_database_sid }}"
+    sql_statement: 'select WRL_PARAMETER from v$encryption_wallet;'
+    output_as_array: True
+  register: sqlplusoutput1
+
+# Set oracle_target_wallet_dir fact 
+- name: Set oracle_target_wallet_dir fact 
+  set_fact:
+    oracle_target_wallet_dir: "{{ sqlplusoutput1.sqlplus_message[0][0] | regex_replace('^(?P<tde_path>.+)/' + oracle_target_database_sid + '(?P<some_slash>.+)$', '\\g<tde_path>') | regex_replace('^(?P<tde_path>.+)/\\$ORACLE_UNQNAME$', '\\g<tde_path>') }}" 
+
+# Discover target RAC cluster
+- name: Discover target RAC cluster
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_target_database_sid }}"
+    sql_statement: "select value from v$parameter where name = 'cluster_database';"
+    output_as_array: True
+  register: sqlplusoutput1
+
+# Set convert_to_RAC fact 
+- name: Set convert_to_RAC fact 
+  set_fact:
+    convert_to_RAC: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+ 
+# Discover grid_target_data_dg
+- name: Discover grid_target_data_dg
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_target_database_sid }}"
+    sql_statement: "select value from v$parameter where name = 'db_create_file_dest';"
+    output_as_array: True
+  register: sqlplusoutput1
+
+# Set cgrid_target_data_dg fact 
+- name: Set grid_target_data_dg fact 
+  set_fact:
+    grid_target_data_dg: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+
+# Discover grid_target_reco_dg
+- name: Discover grid_target_reco_dg
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_target_database_sid }}"
+    sql_statement: "select value from v$parameter where name = 'db_recovery_file_dest';"
+    output_as_array: True
+  register: sqlplusoutput1
+
+# Set grid_target_reco_dg fact 
+- name: Set grid_target_reco_dg fact 
+  set_fact:
+    grid_target_reco_dg: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+
+# Obtaining ASM instance name 
+- name: Obtaining ASM instance name 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ grid_user }}"
+  oracle_srvctl_module:
+    oracle_home: "{{ grid_target_ohome_dir }}"
+    srvctl_command: "status asm"
+    detail: True
+  register: srvctloutput1 
+
+# Set grid_oracle_database_sid fact 
+- name: Set ogrid_oracle_database_sid fact
+  set_fact:
+    grid_oracle_database_sid: "{{ srvctloutput1.srvctl_output[2] | regex_replace('^ASM instance (?P<asm_instance>.+) is running on node (?P<node>.+)$', '\\g<asm_instance>') }}"  
+
+# Discover oracle_target_adump_dir
+- name: Discover oracle_target_adump_dir
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_target_database_sid }}"
+    sql_statement: "select value from v$parameter where name = 'audit_file_dest';"
+    output_as_array: True
+  register: sqlplusoutput1
+
+# Set oracle_target_adump_dir fact 
+- name: Set oracle_target_adump_dir fact 
+  set_fact:
+    oracle_target_adump_dir: "{{ sqlplusoutput1.sqlplus_message[0][0] }}" 
+
+# Discover if target is Exadata
+- name: Discover if target is Exadata
+  become: yes
+  become_method: sudo  
+  become_user: "{{ grid_user }}"
+  oracle_asmcmd_module:
+    oracle_home: "{{ grid_target_ohome_dir }}"
+    oracle_sid: "{{ grid_oracle_database_sid }}"
+    asmcmd_script: "lsdsk"
+    output_as_array: True
+  register: asmcmdoutput 
+ 
+# Set letter_o_in_asmcmd_lsdsk_cmd fact 
+- name: Set letter_o_in_asmcmd_lsdsk_cmd fact
+  set_fact:
+    letter_o_in_asmcmd_lsdsk_cmd: "{{ asmcmdoutput.asmcmd_message[0] | join('\n') | regex_search('^o', multiline=True) }}"  
+
+# Set convert_to_ExaCS to True
+- name: Set convert_to_ExaCS to True
+  set_fact:
+    convert_to_ExaCS: "True"
+  when: letter_o_in_asmcmd_lsdsk_cmd != ''
+
+# Set convert_to_ExaCS to True
+- name: Set convert_to_ExaCS to True
+  set_fact:
+    convert_to_ExaCS: "False"
+  when: letter_o_in_asmcmd_lsdsk_cmd == ''
+
+# Set oracle_target_racnode1_adump_dir fact 
+- name: Set oracle_target_racnode1_adump_dir fact 
+  set_fact:
+    oracle_target_racnode1_adump_dir: "{{ oracle_target_adump_dir }}"
+  when: convert_to_RAC
+
+# Set oracle_target_racnode2_adump_dir fact 
+- name: Set oracle_target_racnode2_adump_dir fact 
+  set_fact:
+    oracle_target_racnode2_adump_dir: "{{ oracle_target_adump_dir }}"
+  when: convert_to_RAC  
+
+# Set oracle_target_racnode1_adump_dir fact 
+- name: Set oracle_target_racnode1_adump_dir fact 
+  set_fact:
+    oracle_target_racnode1_adump_dir: ""
+  when: not convert_to_RAC
+
+# Set oracle_target_racnode2_adump_dir fact 
+- name: Set oracle_target_racnode2_adump_dir fact 
+  set_fact:
+    oracle_target_racnode2_adump_dir: ""
+  when: not convert_to_RAC 
+
+# Show all discovered facts about target database
+- name: Show all discovered facts about target database
+  debug:
+    msg: 
+      - "convert_to_RAC = {{ convert_to_RAC }}"
+      - "convert_to_ExaCS = {{ convert_to_ExaCS }}"
+      - "oracle_target_database_unique_name = {{ oracle_target_database_unique_name }}"
+      - "oracle_target_ohome_dir = {{ oracle_target_ohome_dir }}"
+      - "grid_target_ohome_dir = {{ grid_target_ohome_dir }}"
+      - "oracle_target_wallet_dir = {{ oracle_target_wallet_dir }}"
+      - "grid_target_data_dg = {{ grid_target_data_dg }}"
+      - "grid_target_reco_dg = {{ grid_target_reco_dg }}"
+      - "grid_oracle_database_sid = {{ grid_oracle_database_sid }}"
+      - "oracle_target_adump_dir = {{ oracle_target_adump_dir }}"
+      - "oracle_target_racnode1_adump_dir = {{ oracle_target_racnode1_adump_dir }}"
+      - "oracle_target_racnode2_adump_dir = {{ oracle_target_racnode2_adump_dir }}"
+
+
+      

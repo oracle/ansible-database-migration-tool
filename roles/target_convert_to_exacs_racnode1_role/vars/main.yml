@@ -1,0 +1,5 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+target_exacs_hostname_fact_table: "{{ groups['target'] }}"
+target_exacs_host_count: "{{ groups['target'] | length }}"

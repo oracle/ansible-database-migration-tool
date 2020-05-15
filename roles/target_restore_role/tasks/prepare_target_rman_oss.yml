@@ -1,0 +1,40 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Prepare target RMAN for restore from OSS 
+#  
+
+# Upload Oracle Database Cloud Backup Module
+- name: Upload Oracle Database Cloud Backup Module
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}" 
+  copy:
+    src: "{{ opc_installer_zip_src_location }}"
+    dest: "{{ opc_installer_zip_dest_location }}"
+
+# Unzip Oracle Database Cloud Backup Module
+- name: Unzip Oracle Database Cloud Backup Module
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  unarchive:
+    src: "{{ opc_installer_zip_dest_location }}"
+    dest: "{{ opc_installer_dest_location }}"
+    remote_src: yes
+
+# Setup Oracle Database Cloud Backup Module
+- name: Setup Oracle Database Cloud Backup Module
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}" 
+  oracle_cloud_odcb_module:
+    opc_install_location: "{{ opc_installer_dest_location }}/opc_installer/"
+    host: "{{ oci_swiftobjectstorage_url }}"
+    opc_id: "{{ oci_user }}"
+    opc_pass: "{{ oci_authtoken_pass }}"
+    container: "{{ oci_oss_container }}"
+    wallet_dir: "{{ wallet_dir }}"
+    lib_dir: "{{ lib_dir }}"
+    config_file: "{{ config_file }}"
+  

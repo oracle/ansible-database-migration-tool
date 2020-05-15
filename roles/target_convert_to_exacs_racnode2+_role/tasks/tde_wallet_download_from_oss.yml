@@ -1,0 +1,54 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# TDE wallet download from OSS
+#   
+
+# Create TDE directory on target
+- name: Create TDE directory on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  file:
+    path: "{{ oracle_target_wallet_dir }}" 
+    state: directory
+    owner: "{{ oracle_user }}"
+
+# Download TDE file from OSS 
+- name: Download TDE file from OSS 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  command: 'curl -v -X GET -u "{{ oci_user }}:{{ oci_authtoken_pass }}" {{ oci_swiftobjectstorage_url }}/{{ oci_oss_container }}/{{ oracle_source_database_sid }}_tde.tgz --output {{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tgz'
+
+# Unpack the source wallet on target TDE location
+- name: Unpack the source wallet on target TDE location
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  unarchive:
+    src: "{{ oracle_target_wallet_dir }}/{{ oracle_source_database_sid }}_tde.tgz"
+    dest: "{{ oracle_target_wallet_dir }}"
+    remote_src: yes
+
+# Create TNS directory for sqlnet.ora on target 
+- name: Create TNS directory for sqlnet.ora on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  file:
+    path: "{{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}/" 
+    state: directory
+    owner: "{{ oracle_user }}"
+
+# Upload sqlnet.ora file template
+- name: Upload sqlnet.ora file template
+  become: yes
+  become_method: sudo  
+  template:
+    src: "../templates/sqlnet.ora.j2"
+    dest: "{{ oracle_target_ohome_dir }}/network/admin/{{ oracle_source_database_sid }}/sqlnet.ora"
+    owner: "{{ oracle_user }}"
+  
+  
+  

@@ -1,0 +1,1 @@
+set dbid {{ oracle_source_dbid }}; set DECRYPTION identified by "{{ rman_password_on_transit }}"; run { SET CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE SBT TO "%F"; allocate channel c1 device type sbt PARMS "SBT_LIBRARY={{ lib_dir }}/libopc.so, SBT_PARMS=(OPC_PFILE={{ config_file }})"; RESTORE CONTROLFILE FROM AUTOBACKUP; }

@@ -1,0 +1,285 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Import TDE into CDB
+#  
+
+# Create CDB wallet backup directory on target 
+- name: Create CDB wallet backup directory on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  file:
+    path: "{{ cdb_wallet_dir }}/backup" 
+    state: directory
+    owner: "{{ oracle_user }}"
+
+# Copy CDB wallet's ewallet.p12 and cwallet.sso to backup directory on target 
+- name: Copy CDB wallet's ewallet.p12 and cwallet.sso to backup directory on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  command: cp {{ cdb_wallet_dir }}/{{ item }} {{ cdb_wallet_dir }}/backup/
+  with_items:
+   - "ewallet.p12"
+   - "cwallet.sso"
+
+# Remove CDB wallet's cwallet.sso file 
+- name: Remove CDB wallet's cwallet.sso file 
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  file:
+    state: absent
+    path: "{{ cdb_wallet_dir }}/cwallet.sso"
+
+# Closing autologin wallet for all containers in CDB on target 
+- name: Closing autologin wallet for all containers in CDB on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT SET KEYSTORE CLOSE CONTAINER = ALL;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput1
+
+# Opening password based wallet for all containers in CDB on target 
+- name: Opening password based wallet for all containers in CDB on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY {{ cdb_wallet_password }} CONTAINER = ALL;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput2
+
+# Import the wallet from non-CDB database to CDB's PDB ({{ plug_as_pdb }}) on target
+- name: Import the wallet from non-CDB database to CDB's PDB ({{ plug_as_pdb }}) on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    pdb_service: "{{ plug_as_pdb }}"
+    set_container: True
+    sql_statement: "ADMINISTER KEY MANAGEMENT IMPORT ENCRYPTION KEYS WITH SECRET \"{{ plug_temporal_tde_wallet_password }}\" FROM '{{ plug_temporal_tde_wallet_dir }}/{{ oracle_source_database_sid }}_tde.key' IDENTIFIED BY {{ cdb_wallet_password }} WITH BACKUP;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput3
+
+# After import obtain key_id from v$encryption_keys on CDB's PDB level on target
+- name: After import obtain key_id from v$encryption_keys on CDB's PDB level on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    pdb_service: "{{ plug_as_pdb }}"
+    set_container: True
+    sql_statement: "select KEY_ID from v$encryption_keys;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput4
+
+# Set fact for key_id
+- name: Set fact for key_id
+  set_fact:
+    key_id: "{{ sqlplusoutput4.sqlplus_message[0][1] }}"
+
+# Pause for 2 minute before moving forward
+#- name: Pause for 2 minute before moving forward
+#  pause:
+#    minutes: 2
+
+# Show the wallet status for CDB's PDB level on target
+- name: Show the wallet status for CDB's PDB level on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    pdb_service: "{{ plug_as_pdb }}"
+    set_container: True
+    sql_statement: "SELECT * FROM V$ENCRYPTION_WALLET;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput5
+
+# Close of PDB on target (to avoid ORA-28442 - Rekey of the TDE master encryption key not permited when PDB in restricted mode)
+- name: Close of PDB on target (to avoid ORA-28442 - Rekey of the TDE master encryption key not permited when PDB in restricted mode)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    sql_statement: "alter pluggable database {{ plug_as_pdb }} close;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput51
+
+# Open of PDB on target (to avoid ORA-28442 - Rekey of the TDE master encryption key not permited when PDB in restricted mode)
+- name: Open of PDB on target (to avoid ORA-28442 - Rekey of the TDE master encryption key not permited when PDB in restricted mode)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    sql_statement: "alter pluggable database {{ plug_as_pdb }} open;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput52
+
+# Use that key for CDB's PDB level on target
+- name: Use that key for CDB's PDB level on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    pdb_service: "{{ plug_as_pdb }}"
+    set_container: True
+    sql_statement: "ADMINISTER KEY MANAGEMENT USE KEY '{{ key_id }}' IDENTIFIED BY {{ cdb_wallet_password }} WITH BACKUP;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput6
+
+# Create autologin wallet from password based in CDB level on target
+- name: Create autologin wallet from password based in CDB level on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    sql_statement: "ADMINISTER KEY MANAGEMENT CREATE AUTO_LOGIN KEYSTORE FROM KEYSTORE '{{ cdb_wallet_dir }}' IDENTIFIED BY {{ cdb_wallet_password }};"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput7
+
+# Shutdown CDB on target 
+- name: Shutdown CDB on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    sql_statement: "shutdown immediate;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput8
+
+# Startup CDB on target 
+- name: Startup CDB on target 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    sql_statement: "startup open;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput9
+
+# Collect wallet status for CDB on target
+- name: Collect wallet status for CDB on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    sql_statement: "SELECT STATUS FROM v$encryption_wallet;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput10
+
+# Set fact for cdb_wallet_status
+- name: Set fact for cdb_wallet_status
+  set_fact:
+    cdb_wallet_status: "{{ sqlplusoutput10.sqlplus_message[0][0] }}"
+
+# Collect wallet status for CDB's PDB ({{ plug_as_pdb }}) on target
+- name: Collect wallet status for CDB's PDB ({{ plug_as_pdb }}) on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    pdb_service: "{{ plug_as_pdb }}"
+    set_container: True
+    sql_statement: "SELECT STATUS FROM v$encryption_wallet;"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput11
+
+# Set fact for pdb_wallet_status
+- name: Set fact for pdb_wallet_status
+  set_fact:
+    pdb_wallet_status: "{{ sqlplusoutput11.sqlplus_message[0][1] }}"
+
+# Collect PDB_PLUG_IN_VIOLATIONS for ERROR type and PENDING status for CDB on target
+- name: Collect PDB_PLUG_IN_VIOLATIONS for ERROR type and PENDING status for CDB on target
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ plug_into_cdb }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ cdb_unique_name }}"
+    pdb_service: "{{ plug_as_pdb }}"
+    set_container: True
+    sql_statement: "select type, name, cause, status, message, action from PDB_PLUG_IN_VIOLATIONS where status='PENDING' and type='ERROR';"
+    ignore_ORA_errors: True
+    output_as_array: True    
+  register: sqlplusoutput12
+
+# Set fact for PDB_PLUG_IN_VIOLATIONS
+- name: Set fact for PDB_PLUG_IN_VIOLATIONS
+  set_fact:
+    PDB_PLUG_IN_VIOLATIONS: "{{ sqlplusoutput12.sqlplus_message[0] }}"
+
+# Show cdb_wallet_status on target
+- name: Show cdb_wallet_status on target
+  debug:
+    msg: "CDB: {{ plug_into_cdb }} - TDE wallet status is {{ cdb_wallet_status }}"
+  when: (cdb_wallet_status is defined)
+
+# Show pdb_wallet_status on target
+- name: Show pdb_wallet_status on target
+  debug:
+    msg: "PDB: {{ plug_as_pdb }} - TDE wallet status is {{ pdb_wallet_status }}"
+  when: (pdb_wallet_status is defined)
+
+# Show PDB_PLUG_IN_VIOLATIONS on target
+- name: Show PDB_PLUG_IN_VIOLATIONS on target
+  debug:
+    msg: "{{ PDB_PLUG_IN_VIOLATIONS }}"
+    

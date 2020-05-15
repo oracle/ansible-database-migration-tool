@@ -1,0 +1,18 @@
+#Copyright (c) 2020, Oracle and/or its affiliates.
+#The Universal Permissive License (UPL), Version 1.0
+#
+# Execute the backup on the source 
+#
+
+- import_tasks: prepare_source_rman_oss.yml
+  when: prepare_rman_on_source == 'True' 
+
+- import_tasks: backup_source_to_oss_level_0.yml 
+  when: backup_level0 == 'True'
+
+- import_tasks: backup_source_to_oss_level_1.yml
+  when: backup_level1 == 'True'
+
+- import_tasks: tde_wallet_upload_to_oss.yml
+  when: tde_upload_to_oss == 'True'
+
