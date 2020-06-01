@@ -29,7 +29,7 @@
   become_method: sudo  
   become_user: "{{ oracle_user }}" 
   oracle_cloud_odcb_module:
-    opc_install_location: "{{ opc_installer_dest_location }}/opc_installer/"
+    opc_install_location: "{{ opc_installer_dest_location }}/opc_installer/opc_installer/"
     host: "{{ oci_swiftobjectstorage_url }}"
     opc_id: "{{ oci_user }}"
     opc_pass: "{{ oci_authtoken_pass }}"
