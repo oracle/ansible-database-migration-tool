@@ -541,6 +541,19 @@
     output_as_array: True    
   register: sqlplusoutput7  
 
+# Setting spfile's clonedb to FALSE for both instances (to avoid ORA-17514 - Access to clonedb bitmap file failed)
+- name:  Setting spfile's clonedb to FALSE for both instances (to avoid ORA-17514 - Access to clonedb bitmap file failed)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    sql_statement: "alter system set clonedb=FALSE sid='*' scope=spfile;"
+    output_as_array: True  
+    ignore_ORA_errors: True  
+  register: sqlplusoutput8
+
 # Shutdown immediate instance again
 - name: Shutdown immediate instance again
   become: yes
