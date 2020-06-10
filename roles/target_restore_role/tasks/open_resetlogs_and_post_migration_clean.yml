@@ -60,6 +60,25 @@
   poll: 30
   register: rmanoutput1  
 
+# Crosscheck archivelogs and delete expired and obsolete (to avoid ORA-00308, ORA-27037)
+- name: Crosscheck archivelogs and delete expired and obsolete (to avoid ORA-00308, ORA-27037)
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_unqname: "{{ oracle_target_database_unique_name }}"
+    rman_script: "{{ lookup('template', '../templates/rman_crosscheck_archivelogs_and_delete_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_crosscheck_archivelogs_and_delete_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+    ignore_RMAN_errors: True
+  async: "{{ ansible_async_restore_source_timeout }}"
+  poll: 30
+  register: rmanoutput2 
+
 # Starting RMAN to open database with resetlogs
 - name: Starting RMAN to open database with resetlogs
   become: yes
