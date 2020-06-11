@@ -17,7 +17,7 @@
 # Set facts related to target database and GI
 - name: Set facts related to target database and GI
   set_fact:
-    oracle_target_database_unique_name: "{{ target_db_discovery_results.oracle_db_unique_name }}" 
+#    oracle_target_database_unique_name: "{{ target_db_discovery_results.oracle_db_unique_name }}" 
     oracle_target_ohome_dir: "{{ target_db_discovery_results.oracle_home }}"
     grid_target_ohome_dir: "{{ target_db_discovery_results.oracle_gi_home }}"
 
@@ -74,6 +74,23 @@
 - name: Set oracle_target_wallet_dir fact 
   set_fact:
     oracle_target_wallet_dir: "{{ sqlplusoutput1.sqlplus_message[0][0] | regex_replace('^(?P<tde_path>.+)/' + oracle_target_database_sid + '(?P<some_slash>.+)$', '\\g<tde_path>') | regex_replace('^(?P<tde_path>.+)/\\$ORACLE_UNQNAME$', '\\g<tde_path>') }}" 
+
+# Discover target database unique name
+- name: Discover target database unique name
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_target_database_sid }}"
+    sql_statement: 'select db_unique_name from v$database;'
+    output_as_array: True
+  register: sqlplusoutput2
+
+# Set oracle_target_database_unique_name fact 
+- name: Set oracle_target_database_unique_name fact 
+  set_fact:
+    oracle_target_database_unique_name: "{{ sqlplusoutput2.sqlplus_message[0][0] }}" 
 
 # Discover target RAC cluster
 - name: Discover target RAC cluster
