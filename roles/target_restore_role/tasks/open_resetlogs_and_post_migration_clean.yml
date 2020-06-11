@@ -308,6 +308,19 @@
   with_items: "{{ sqlplusoutput7.sqlplus_message[0] }}"
   when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
 
+# Adding new TEMP file for root container (12.1+)
+- name: Adding new TEMP file for root container (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "ALTER TABLESPACE {{ temp_tablespace_name }} ADD TEMPFILE;"
+    output_as_array: True
+  register: sqlplusoutput8
+  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
 # Clearing root container TEMPfiles (12.1+)
 - name: Clearing root container TEMPfiles (12.1+)
   become: yes
@@ -325,32 +338,20 @@
   register: sqlplusoutput20
   when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
 
-# Adding new TEMP file for root container (12.1+)
-- name: Adding new TEMP file for root container (12.1+)
-  become: yes
-  become_method: sudo
-  become_user: "{{ oracle_user }}"
-  oracle_sqlplus_module:
-    oracle_home: "{{ oracle_target_ohome_dir }}"
-    oracle_sid: "{{ oracle_source_database_sid }}"
-    sql_statement: "ALTER TABLESPACE {{ temp_tablespace_name }} ADD TEMPFILE;"
-    output_as_array: True
-  register: sqlplusoutput8
-  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
    
 # Clearing TEMP file for root container (12.1+)
-- name: Clearing TEMP file for root container (12.1+)
-  become: yes
-  become_method: sudo
-  become_user: "{{ oracle_user }}"
-  oracle_sqlplus_module:
-    oracle_home: "{{ oracle_target_ohome_dir }}"
-    oracle_sid: "{{ oracle_source_database_sid }}"
-    sql_statement: "ALTER DATABASE TEMPFILE '{{ tempfile_root_container }}' DROP;"
-    ignore_ORA_errors: True
-    output_as_array: True
-  register: sqlplusoutput9
-  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))  
+#- name: Clearing TEMP file for root container (12.1+)
+#  become: yes
+#  become_method: sudo
+#  become_user: "{{ oracle_user }}"
+#  oracle_sqlplus_module:
+#    oracle_home: "{{ oracle_target_ohome_dir }}"
+#    oracle_sid: "{{ oracle_source_database_sid }}"
+#    sql_statement: "ALTER DATABASE TEMPFILE '{{ tempfile_root_container }}' DROP;"
+#    ignore_ORA_errors: True
+#    output_as_array: True
+#  register: sqlplusoutput9
+#  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))  
 
 # Obtaining PDB$SEED Tempfile (12.1+)
 - name: Obtaining PDB$SEED TEMPfile (12.1+)
