@@ -296,9 +296,33 @@
   when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
 
 # Set fact for name of the temp file for root container (12.1+)
-- name: Set fact for name of the temp file for root container (12.1+)
+#- name: Set fact for name of the temp file for root container (12.1+)
+#  set_fact:
+#    tempfile_root_container: "{{ sqlplusoutput7.sqlplus_message[0][0] }}"
+#  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Populate root container TEMPfile list (12.1+)
+- name: Populate root container TEMPfile list (12.1+)
   set_fact:
-    tempfile_root_container: "{{ sqlplusoutput7.sqlplus_message[0][0] }}"
+     root_tempfiles: "{{ root_tempfiles|default([]) + [ {'tempfile': item } ] }}"
+  with_items: "{{ sqlplusoutput7.sqlplus_message[0] }}"
+  when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
+
+# Clearing root container TEMPfiles (12.1+)
+- name: Clearing root container TEMPfiles (12.1+)
+  become: yes
+  become_method: sudo
+  become_user: "{{ oracle_user }}"
+  oracle_sqlplus_module:
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    sql_statement: "ALTER DATABASE TEMPFILE '{{ item.tempfile }}' DROP;"
+    ignore_ORA_errors: True
+    output_as_array: True
+  loop: "{{ root_tempfiles }}"
+  loop_control:
+    index_var: root_tempfiles_loop_idx1
+  register: sqlplusoutput20
   when: (cdb_database == True) and (tempfile_bigfile == False) and ((oracle_source_version == '12.1.0.2') or (oracle_source_version == '12.2.0.1') or (oracle_source_version == '18.0.0.0'))
 
 # Adding new TEMP file for root container (12.1+)
