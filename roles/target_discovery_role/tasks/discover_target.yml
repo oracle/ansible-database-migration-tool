@@ -17,7 +17,7 @@
 # Set facts related to target database and GI
 - name: Set facts related to target database and GI
   set_fact:
-#    oracle_target_database_unique_name: "{{ target_db_discovery_results.oracle_db_unique_name }}" 
+    oracle_target_database_unique_name: "{{ target_db_discovery_results.oracle_db_unique_name }}" 
     oracle_target_ohome_dir: "{{ target_db_discovery_results.oracle_home }}"
     grid_target_ohome_dir: "{{ target_db_discovery_results.oracle_gi_home }}"
 
