@@ -93,11 +93,11 @@ config_file: "{{ opc_installer_dest_location }}/config_{{ oracle_source_database
 
 # RMAN cloud module lib dir by OCI tooling for automatic backups
 #
-lib_dir_oci_automatic_backups: "/opt/oracle/dcs/commonstore/pkgrepos/oss/odbcs/"
+lib_dir_oci_automatic_backups: "/opt/oracle/dcs/commonstore/pkgrepos/oss/odbcs"
 
 # RMAN cloud module config file dir by OCI tooling for automatic backups
 #
-config_file_dir_oci_automatic_backups: "/opt/oracle/dcs/commonstore/objectstore/opc_pfile/"
+config_file_dir_oci_automatic_backups: "/opt/oracle/dcs/commonstore/objectstore/opc_pfile"
 
 # Default OCI bucket prefix for target database
 #
