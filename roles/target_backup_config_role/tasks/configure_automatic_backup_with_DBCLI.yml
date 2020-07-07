@@ -69,6 +69,22 @@
   register: rmanoutput1
   when: (convert_to_RAC == 'False')
 
+# Configure RMAN's channel device SBT_TAPE for OCI automatic backups 
+- name: Configure RMAN's channel device SBT_TAPE for OCI automatic backups 
+  become: yes
+  become_method: sudo  
+  become_user: "{{ oracle_user }}"   
+  oracle_rman_module:
+    oracle_sid: "{{ oracle_source_database_sid }}"
+    oracle_home: "{{ oracle_target_ohome_dir }}"
+    rman_script: "{{ lookup('template', '../templates/rman_configure_channel_device_to_oss_script.j2') }}"
+    rman_logfile: "{{ rman_log_path }}/rman_configure_channel_device_to_oss_{{ oracle_source_database_sid }}_{{ansible_date_time.iso8601_basic_short}}.log"
+    output_as_array: True
+    output_omit_heading: True
+    output_omit_ending: True  
+  register: rmanoutput1
+  when: (convert_to_RAC == 'False') 
+
 ################################################################################################
 # Update database with current backupconfig (when oracle_target_database_oci_bucketname not set)
 ################################################################################################
