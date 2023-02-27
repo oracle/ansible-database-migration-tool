@@ -742,9 +742,13 @@ rman_channels_number: "1"
 
 Luke Feldman ([lukasz.feldman@oracle.com](mailto:lukasz.feldman@oracle.com))
 
-## How to Contribute
+## Contributing
 
-Please review [CONTRIBUTING.md](CONTRIBUTING.md) file. 
+This project welcomes contributions from the community. Before submitting a pull request, please [review our contribution guide](./CONTRIBUTING.md)
+
+## Security
+
+Please consult the [security guide](./SECURITY.md) for our responsible security vulnerability disclosure process
 
 ## License
 
